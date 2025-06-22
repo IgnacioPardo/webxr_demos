@@ -1,0 +1,1308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>VR Car Viewer AR Passthrough - BMW Collection</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚗</text></svg>">
+    <style>
+        body {
+            margin: 0;
+            background-color: #000;
+            color: #fff;
+            font-family: Monospace;
+            font-size: 13px;
+            line-height: 24px;
+            overscroll-behavior: none;
+        }
+
+        #info {
+            position: absolute;
+            top: 10px;
+            width: 100%;
+            text-align: center;
+            z-index: 100;
+            display: block;
+        }
+
+        #info a, .button {
+            color: #f00;
+            font-weight: normal;
+            text-decoration-line: underline;
+            cursor: pointer;
+        }
+
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 16px;
+        }
+
+        #arButton {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 15px 30px;
+            background: linear-gradient(45deg, #ff6600, #ff9900);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(255, 102, 0, 0.3);
+            transition: all 0.3s ease;
+        }
+
+        #arButton:hover {
+            background: linear-gradient(45deg, #ff7700, #ffaa00);
+            box-shadow: 0 6px 20px rgba(255, 102, 0, 0.4);
+            transform: translateX(-50%) translateY(-2px);
+        }
+
+        #arButton:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">
+        <a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> VR Car Viewer AR Passthrough - BMW Collection<br/>
+        AR Mode: See cars overlaid on your real environment • Use controllers to interact with UI
+    </div>
+
+    <div id="loading" class="loading">Loading BMW Models...</div>
+
+    <button id="arButton">Enter AR Passthrough</button>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.164.1/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.164.1/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        let camera, scene, renderer, environment;
+        let currentCarIndex = 0;
+        let cars = [];
+        let carModels = [];
+        let loadingElement;
+        let controls;
+        let currentSession;
+
+        // VR Navigation variables
+        let controller1, controller2;
+        let raycaster = new THREE.Raycaster();
+        let tempMatrix = new THREE.Matrix4();
+        let moveVector = new THREE.Vector3();
+        let userGroup = new THREE.Group();
+
+        // Car information - DYNAMIC LOADING
+        let carData = [];
+        
+        // Known car models that we want to load
+        const knownModels = [
+            "2018_bmw_m4_coupe_f82_lci.glb",
+            "e36.glb",
+            // "porsche_gt3_rs.glb",
+            "mercedes-benz_300_sl_gullwing.glb",
+            "bmw_e36_318ti.glb",
+            "2018_bmw_m4_convertible_f83.glb",
+            "2022_bmw_m4_gt3.glb",
+            "free_bmw_m3_e30.glb",
+            "bmw_m4_adro_bodykit.glb",
+        ];
+
+        // UI Elements
+        let uiGroup;
+        let slidersGroup;
+        let carNameText, switchButton, rotateButton;
+        let isRotating = false;
+        let guiVisible = true;
+        let previousXButtonState = false; // For button press detection
+
+        // Car control parameters
+        let carControls = {
+            scale: 1.0,
+            positionX: 0,
+            positionY: 0,
+            positionZ: 0,
+            rotationY: 0
+        };
+
+        // Store original car properties when loaded
+        let originalCarProperties = {
+            position: { x: 0, y: 0, z: 0 },
+            scale: 1.0,
+            rotation: { x: 0, y: 0, z: 0 }
+        };
+
+        // Audio system variables
+        let audioListener;
+        let currentCarAudio = null;
+        let audioLoader;
+
+        init();
+
+        function init() {
+            loadingElement = document.getElementById('loading');
+
+            // Scene setup - TRANSPARENT BACKGROUND for AR passthrough
+            scene = new THREE.Scene();
+            // NOTE: No background color for passthrough to work!
+            // scene.background = new THREE.Color(0x000000);
+
+            // Camera
+            camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.01, 50);
+            camera.position.set(0, 1.6, 3);
+            
+            // Add orbit controls for non-AR mode
+            const container = document.body;
+            controls = new OrbitControls(camera, container);
+            controls.target.set(0, 1.6, 0);
+            controls.update();
+            
+            // Simple user group for VR navigation
+            userGroup.add(camera);
+            scene.add(userGroup);
+
+            // Initialize audio system
+            audioListener = new THREE.AudioListener();
+            camera.add(audioListener);
+            audioLoader = new THREE.AudioLoader();
+
+            // Lighting - adjusted for AR environment
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); // Brighter for AR
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0); // Brighter for AR
+            directionalLight.position.set(5, 10, 5);
+            directionalLight.castShadow = true;
+            directionalLight.shadow.mapSize.setScalar(1024);
+            directionalLight.shadow.camera.near = 0.1;
+            directionalLight.shadow.camera.far = 50;
+            directionalLight.shadow.camera.left = -10;
+            directionalLight.shadow.camera.right = 10;
+            directionalLight.shadow.camera.top = 10;
+            directionalLight.shadow.camera.bottom = -10;
+            scene.add(directionalLight);
+
+            // Add a subtle grid helper for spatial reference (semi-transparent)
+            const gridHelper = new THREE.GridHelper(4, 20, 0x444444, 0x444444);
+            gridHelper.material.transparent = true;
+            gridHelper.material.opacity = 0.3;
+            gridHelper.material.depthTest = false; // avoid z-fighting
+            gridHelper.position.y = -0.01; // Slightly below ground level
+            scene.add(gridHelper);
+
+            // Optional: Add a semi-transparent floor plane for shadows
+            const floorGeometry = new THREE.PlaneGeometry(4, 4);
+            const floorMaterial = new THREE.MeshStandardMaterial({
+                color: 0x888888,
+                transparent: true,
+                opacity: 0.1,
+                roughness: 1.0,
+                metalness: 0.0
+            });
+            const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+            floor.rotation.x = -Math.PI / 2;
+            floor.receiveShadow = true;
+            scene.add(floor);
+
+            // Renderer - CRITICAL: alpha: true for passthrough
+            renderer = new THREE.WebGLRenderer({ 
+                antialias: true, 
+                alpha: true  // ESSENTIAL for AR passthrough
+            });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setAnimationLoop(animate);
+            renderer.xr.enabled = true;
+            // renderer.shadowMap.enabled = true;
+            // renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            // renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+            document.body.appendChild(renderer.domElement);
+
+            // AR Button setup
+            setupARButton();
+
+            // VR Controllers
+            setupVRControllers();
+
+            // UI in AR/VR
+            setupVRUI();
+
+            // Discover and load cars
+            initializeCarSystem();
+
+            // Event listeners
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        function setupARButton() {
+            const arButton = document.getElementById('arButton');
+            
+            // Check for WebXR AR support
+            if ('xr' in navigator) {
+                navigator.xr.isSessionSupported('immersive-ar').then((supported) => {
+                    if (supported) {
+                        arButton.addEventListener('click', startAR);
+                        arButton.style.display = 'block';
+                    } else {
+                        arButton.textContent = 'AR Not Supported';
+                        arButton.disabled = true;
+                    }
+                }).catch(() => {
+                    arButton.textContent = 'AR Not Available';
+                    arButton.disabled = true;
+                });
+            } else {
+                arButton.textContent = 'WebXR Not Supported';
+                arButton.disabled = true;
+            }
+        }
+
+        function startAR() {
+            const sessionInit = {
+                optionalFeatures: [
+                    'local-floor',
+                    'bounded-floor',
+                    'hand-tracking',
+                    'layers'
+                ]
+            };
+            
+            navigator.xr.requestSession('immersive-ar', sessionInit)
+                .then(onSessionStarted)
+                .catch((error) => {
+                    console.error('Failed to start AR session:', error);
+                    alert('Failed to start AR session. Make sure you have a compatible device and browser.');
+                });
+        }
+
+        async function onSessionStarted(session) {
+            session.addEventListener('end', onSessionEnded);
+            
+            // Disable orbit controls in AR mode
+            controls.enabled = false;
+            
+            await renderer.xr.setSession(session);
+            currentSession = session;
+            
+            console.log('🥽 AR Passthrough session started');
+            
+            // Hide the AR button
+            document.getElementById('arButton').style.display = 'none';
+        }
+
+        function onSessionEnded() {
+            if (currentSession) {
+                currentSession.removeEventListener('end', onSessionEnded);
+                currentSession = null;
+            }
+            
+            // Re-enable orbit controls
+            controls.enabled = true;
+            
+            // Show the AR button again
+            document.getElementById('arButton').style.display = 'block';
+            
+            console.log('🥽 AR Passthrough session ended');
+        }
+
+        function setupVRControllers() {
+            const controllerModelFactory = new XRControllerModelFactory();
+
+            // Controller event handlers
+            function onSelectStart() {
+                this.userData.isSelecting = true;
+            }
+
+            function onSelectEnd() {
+                this.userData.isSelecting = false;
+            }
+
+            // Controller 1 (Left controller for GUI toggle)
+            controller1 = renderer.xr.getController(0);
+            controller1.addEventListener('selectstart', onSelectStart);
+            controller1.addEventListener('selectend', onSelectEnd);
+            controller1.addEventListener('selectstart', onSelectStartUI);
+            controller1.addEventListener('selectend', onSelectEndUI);
+            
+            // Add button press handlers for GUI toggle (X button)
+            controller1.addEventListener('connected', function(event) {
+                const gamepad = event.data.gamepad;
+                if (gamepad) {
+                    this.userData.gamepad = gamepad;
+                }
+            });
+            
+            userGroup.add(controller1);
+
+            const controllerGrip1 = renderer.xr.getControllerGrip(0);
+            controllerGrip1.add(controllerModelFactory.createControllerModel(controllerGrip1));
+            userGroup.add(controllerGrip1);
+
+            // Controller 2
+            controller2 = renderer.xr.getController(1);
+            controller2.addEventListener('selectstart', onSelectStart);
+            controller2.addEventListener('selectend', onSelectEnd);
+            controller2.addEventListener('selectstart', onSelectStartUI);
+            controller2.addEventListener('selectend', onSelectEndUI);
+            
+            // Add gamepad reference for controller 2 as well
+            controller2.addEventListener('connected', function(event) {
+                const gamepad = event.data.gamepad;
+                if (gamepad) {
+                    this.userData.gamepad = gamepad;
+                }
+            });
+            
+            userGroup.add(controller2);
+
+            const controllerGrip2 = renderer.xr.getControllerGrip(1);
+            controllerGrip2.add(controllerModelFactory.createControllerModel(controllerGrip2));
+            userGroup.add(controllerGrip2);
+
+            // Add visible ray lines for UI interaction
+            const rayGeometry = new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3(0, 0, 0),
+                new THREE.Vector3(0, 0, -5)
+            ]);
+            
+            const rayMaterial = new THREE.LineBasicMaterial({ 
+                color: 0x00ff00, 
+                transparent: true, 
+                opacity: 0.6 
+            });
+            const rayLine1 = new THREE.Line(rayGeometry, rayMaterial);
+            const rayLine2 = new THREE.Line(rayGeometry, rayMaterial.clone());
+            
+            controller1.add(rayLine1);
+            controller2.add(rayLine2);
+            
+            // Add targeting reticles
+            const reticleGeometry = new THREE.RingGeometry(0.02, 0.04, 8);
+            const reticleMaterial = new THREE.MeshBasicMaterial({ 
+                color: 0x00ff00, 
+                transparent: true, 
+                opacity: 0.8,
+                side: THREE.DoubleSide
+            });
+            
+            const reticle1 = new THREE.Mesh(reticleGeometry, reticleMaterial);
+            const reticle2 = new THREE.Mesh(reticleGeometry, reticleMaterial.clone());
+            
+            reticle1.position.set(0, 0, -2);
+            reticle2.position.set(0, 0, -2);
+            
+            controller1.add(reticle1);
+            controller2.add(reticle2);
+            
+            // Store references
+            controller1.userData.rayLine = rayLine1;
+            controller1.userData.reticle = reticle1;
+            controller2.userData.rayLine = rayLine2;
+            controller2.userData.reticle = reticle2;
+
+            // Add controller pointer geometry
+            const geometry = new THREE.CylinderGeometry(0.01, 0.02, 0.08, 5);
+            geometry.rotateX(-Math.PI / 2);
+            const material = new THREE.MeshStandardMaterial({ 
+                flatShading: true,
+                color: 0xff6600,
+                transparent: true,
+                opacity: 0.8
+            });
+            const mesh = new THREE.Mesh(geometry, material);
+
+            const pivot = new THREE.Mesh(new THREE.IcosahedronGeometry(0.01, 3));
+            pivot.name = 'pivot';
+            pivot.position.z = -0.05;
+            mesh.add(pivot);
+
+            controller1.add(mesh.clone());
+            controller2.add(mesh.clone());
+        }
+
+        function setupVRUI() {
+            uiGroup = new THREE.Group();
+            uiGroup.position.set(-1, 3, -2); // Positioned for AR interaction
+            scene.add(uiGroup);
+
+            // Car name display
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 128;
+            const context = canvas.getContext('2d');
+            
+            createGlassBackground(context, 512, 128, 20, 'rgba(0, 20, 40, 0.8)'); // More opaque for AR
+            
+            context.fillStyle = '#ffffff';
+            context.font = 'Bold 32px Arial';
+            context.textAlign = 'center';
+            context.fillText('Loading...', 256, 64);
+
+            const carNameTexture = new THREE.CanvasTexture(canvas);
+            const carNameMaterial = new THREE.MeshBasicMaterial({ 
+                map: carNameTexture,
+                transparent: true,
+                opacity: 0.9, // More opaque for AR
+                alphaTest: 0.01,
+                side: THREE.DoubleSide
+            });
+            const carNameGeometry = new THREE.PlaneGeometry(1, 0.25);
+            carNameText = new THREE.Mesh(carNameGeometry, carNameMaterial);
+            carNameText.position.set(0, -0.3, 0);
+            uiGroup.add(carNameText);
+
+            // Control buttons
+            createButton('Switch Car', 0, -0.6, 0, switchCar);
+            createButton('Auto Rotate: OFF', 0, -0.9, 0, toggleRotation);
+            createButton('Rotate Left', -0.6, -1.2, 0, rotateCarLeft, 0.6, 0.18);
+            createButton('Rotate Right', 0.6, -1.2, 0, rotateCarRight, 0.6, 0.18);
+            createButton('Scale Up', 0, -1.5, 0, scaleUp);
+            createButton('Scale Down', 0, -1.8, 0, scaleDown);
+            createButton('Play Engine Sound', 0, -2.1, 0, playCarStartup);
+
+            // Add instruction text for GUI toggle
+            createInstructionText();
+
+            // Create sliders panel for car positioning
+            createSliders();
+        }
+
+        function createButton(text, x, y, z, callback, width = 0.8, height = 0.2) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 64;
+            const context = canvas.getContext('2d');
+            
+            createGlassBackground(context, 256, 64, 15, 'rgba(255, 102, 0, 0.7)'); // More opaque for AR
+            
+            context.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+            context.lineWidth = 2;
+            roundRect(context, 1, 1, 254, 62, 15);
+            context.stroke();
+            
+            context.fillStyle = '#ffffff';
+            context.font = 'Bold 18px Arial';
+            context.textAlign = 'center';
+            context.fillText(text, 128, 36);
+
+            const texture = new THREE.CanvasTexture(canvas);
+            const material = new THREE.MeshBasicMaterial({ 
+                map: texture,
+                transparent: true,
+                opacity: 0.9, // More opaque for AR
+                alphaTest: 0.01,
+                side: THREE.DoubleSide
+            });
+            const geometry = new THREE.PlaneGeometry(width, height);
+            const button = new THREE.Mesh(geometry, material);
+            button.position.set(x, y, z);
+            button.userData = { callback: callback, text: text, canvas: canvas, context: context, texture: texture };
+            uiGroup.add(button);
+
+            return button;
+        }
+
+        function createInstructionText() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 64;
+            const context = canvas.getContext('2d');
+            
+            createGlassBackground(context, 512, 64, 15, 'rgba(0, 100, 200, 0.6)');
+            
+            context.fillStyle = '#ffffff';
+            context.font = 'Bold 16px Arial';
+            context.textAlign = 'center';
+            context.fillText('Press Any Button on Left Controller to Hide/Show GUI', 256, 36);
+
+            const texture = new THREE.CanvasTexture(canvas);
+            const material = new THREE.MeshBasicMaterial({ 
+                map: texture,
+                transparent: true,
+                opacity: 0.8,
+                alphaTest: 0.01,
+                side: THREE.DoubleSide
+            });
+            const geometry = new THREE.PlaneGeometry(1.5, 0.2);
+            const instructionText = new THREE.Mesh(geometry, material);
+            instructionText.position.set(0, -2.5, 0);
+            uiGroup.add(instructionText);
+        }
+
+        function onSelectStartUI(event) {
+            const controller = event.target;
+            const intersections = getIntersections(controller);
+            
+            if (intersections.length > 0) {
+                const intersection = intersections[0];
+                const object = intersection.object;
+                
+                if (object.userData.callback) {
+                    // Visual feedback for buttons
+                    object.scale.setScalar(0.9);
+                    
+                    // Execute callback after short delay
+                    setTimeout(() => {
+                        object.userData.callback();
+                        object.scale.setScalar(1.0);
+                    }, 100);
+                } else if (object.userData.isSlider) {
+                    // Start slider dragging
+                    controller.userData.selectedSlider = object;
+                    controller.userData.sliderOffset = intersection.point.x - object.position.x;
+                    console.log('Started dragging slider:', object.userData.property);
+                }
+            }
+        }
+
+        function onSelectEndUI(event) {
+            const controller = event.target;
+            
+            // End slider dragging
+            if (controller.userData.selectedSlider) {
+                controller.userData.selectedSlider = null;
+                controller.userData.sliderOffset = 0;
+                console.log('Stopped dragging slider');
+            }
+            
+            // Reset any visual feedback
+            scene.traverse((child) => {
+                if (child.userData && child.userData.callback) {
+                    child.scale.setScalar(1.0);
+                }
+            });
+        }
+
+        function getIntersections(controller) {
+            const tempMatrix = new THREE.Matrix4();
+            tempMatrix.identity().extractRotation(controller.matrixWorld);
+
+            const raycaster = new THREE.Raycaster();
+            raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+            raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+            raycaster.far = 5;
+            raycaster.near = 0.1;
+
+            // Check intersections with UI elements
+            const uiIntersections = raycaster.intersectObjects(uiGroup.children, false);
+            
+            // Check intersections with sliders
+            const allObjects = [];
+            scene.traverse((child) => {
+                if (child.userData && (child.userData.isSlider || child.userData.isSliderBackground)) {
+                    allObjects.push(child);
+                }
+            });
+            const sliderIntersections = raycaster.intersectObjects(allObjects, false);
+
+            return [...uiIntersections, ...sliderIntersections];
+        }
+
+        // Car management functions
+        function switchCar() {
+            if (carModels.length === 0) return;
+
+            stopCarAudio();
+
+            if (cars[0]) {
+                scene.remove(cars[0]);
+            }
+
+            currentCarIndex = (currentCarIndex + 1) % carModels.length;
+            const newCar = carModels[currentCarIndex];
+            
+            if (newCar) {
+                scene.add(newCar);
+                cars[0] = newCar;
+                
+                currentCarAudio = newCar.userData.audio || null;
+                
+                carControls = {
+                    scale: 1.0,
+                    positionX: 0,
+                    positionY: 0,
+                    positionZ: 0,
+                    rotationY: 0
+                };
+                
+                originalCarProperties = {
+                    position: { 
+                        x: newCar.position.x, 
+                        y: newCar.position.y, 
+                        z: newCar.position.z 
+                    },
+                    scale: newCar.scale.x,
+                    rotation: { 
+                        x: newCar.rotation.x, 
+                        y: newCar.rotation.y, 
+                        z: newCar.rotation.z 
+                    }
+                };
+                
+                updateCarTransform();
+                updateCarNameDisplay(carData[currentCarIndex].name);
+                
+                // Update sliders to match new car's properties
+                updateAllSliders();
+                
+                setTimeout(() => {
+                    playCarStartup();
+                }, 500);
+            }
+        }
+
+        function toggleRotation() {
+            isRotating = !isRotating;
+            const button = uiGroup.children.find(child => 
+                child.userData && child.userData.text && child.userData.text.includes('Auto Rotate')
+            );
+            if (button) {
+                updateButtonText(button, isRotating ? 'Auto Rotate: ON' : 'Auto Rotate: OFF');
+            }
+        }
+
+        function scaleUp() {
+            if (cars[0]) {
+                carControls.scale *= 1.2;
+                updateCarTransform();
+            }
+        }
+
+        function scaleDown() {
+            if (cars[0]) {
+                carControls.scale *= 0.8;
+                updateCarTransform();
+            }
+        }
+
+        function rotateCarLeft() {
+            cars[0].rotation.y -= 0.2; // Larger rotation increment for more visible change
+
+            if (cars[0]) {
+                carControls.rotationY = carControls.rotationY - 0.2; // Larger rotation increment for more visible change
+                updateCarTransform();
+                updateAllSliders();
+                console.log('🔄 Car rotated left, new rotation:', carControls.rotationY, 'radians =', (carControls.rotationY * 180 / Math.PI).toFixed(1), 'degrees');
+            }
+        }
+
+        function rotateCarRight() {
+            cars[0].rotation.y += 0.2; // Larger rotation increment for more visible change
+            if (cars[0]) {
+                carControls.rotationY = carControls.rotationY + 0.2; // Larger rotation increment for more visible change
+                updateCarTransform();
+                updateAllSliders();
+                console.log('🔄 Car rotated right, new rotation:', carControls.rotationY, 'radians =', (carControls.rotationY * 180 / Math.PI).toFixed(1), 'degrees');
+            }
+        }
+
+        function toggleGUIVisibility() {
+            guiVisible = !guiVisible;
+            if (uiGroup) {
+                uiGroup.visible = guiVisible;
+            }
+            if (slidersGroup) {
+                slidersGroup.visible = guiVisible;
+            }
+            
+            // Also toggle controller rays visibility for cleaner experience
+            if (controller1) {
+                if (controller1.userData.rayLine) {
+                    controller1.userData.rayLine.visible = guiVisible;
+                }
+                if (controller1.userData.reticle) {
+                    controller1.userData.reticle.visible = guiVisible;
+                }
+            }
+            if (controller2) {
+                if (controller2.userData.rayLine) {
+                    controller2.userData.rayLine.visible = guiVisible;
+                }
+                if (controller2.userData.reticle) {
+                    controller2.userData.reticle.visible = guiVisible;
+                }
+            }
+        }
+
+        function updateCarTransform() {
+            if (!cars[0]) return;
+            
+            // Apply scale
+            const newScale = originalCarProperties.scale * carControls.scale;
+            cars[0].scale.setScalar(newScale);
+            
+            // Apply position
+            cars[0].position.set(
+                originalCarProperties.position.x + carControls.positionX,
+                originalCarProperties.position.y + carControls.positionY,
+                originalCarProperties.position.z + carControls.positionZ
+            );
+            
+            // Apply rotation - ensure it's being set correctly
+            cars[0].rotation.set(
+                originalCarProperties.rotation.x,
+                originalCarProperties.rotation.y + carControls.rotationY,
+                originalCarProperties.rotation.z
+            );
+            
+            console.log('🚗 Car updated with transforms:');
+            console.log('   Scale:', newScale.toFixed(2));
+            console.log('   Position:', cars[0].position.x.toFixed(2), cars[0].position.y.toFixed(2), cars[0].position.z.toFixed(2));
+            console.log('   Rotation Y (controls):', carControls.rotationY.toFixed(3), 'radians =', (carControls.rotationY * 180 / Math.PI).toFixed(1), 'degrees');
+            console.log('   Rotation Y (actual):', cars[0].rotation.y.toFixed(3), 'radians =', (cars[0].rotation.y * 180 / Math.PI).toFixed(1), 'degrees');
+        }
+
+        function updateButtonText(button, newText) {
+            const userData = button.userData;
+            
+            userData.context.clearRect(0, 0, 256, 64);
+            createGlassBackground(userData.context, 256, 64, 15, 'rgba(255, 102, 0, 0.7)');
+            
+            userData.context.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+            userData.context.lineWidth = 2;
+            roundRect(userData.context, 1, 1, 254, 62, 15);
+            userData.context.stroke();
+            
+            userData.context.fillStyle = '#ffffff';
+            userData.context.font = 'Bold 18px Arial';
+            userData.context.textAlign = 'center';
+            userData.context.fillText(newText, 128, 36);
+            userData.texture.needsUpdate = true;
+        }
+
+        function updateCarNameDisplay(carName) {
+            if (!carNameText) return;
+            
+            const canvas = carNameText.material.map.image;
+            const context = canvas.getContext('2d');
+            
+            context.clearRect(0, 0, 512, 128);
+            createGlassBackground(context, 512, 128, 20, 'rgba(0, 20, 40, 0.8)');
+            
+            context.fillStyle = '#ffffff';
+            context.font = 'Bold 24px Arial';
+            context.textAlign = 'center';
+            context.fillText(carName, 256, 64);
+            carNameText.material.map.needsUpdate = true;
+        }
+
+        // Slider functions
+        function createSliders() {
+            // Create a separate UI group for sliders positioned to the right
+            slidersGroup = new THREE.Group();
+            slidersGroup.position.set(2, 2, -2); // Positioned to the right for AR
+            scene.add(slidersGroup);
+
+            // Slider parameters
+            const sliderWidth = 1.5; // Smaller for AR
+            const sliderHeight = 0.08;
+            const sliderSpacing = 0.25;
+
+            // Create sliders for different controls
+            const sliders = [
+                { name: 'Scale', min: 0.1, max: 10.0, value: carControls.scale, property: 'scale' },
+                { name: 'Position X', min: -3, max: 3, value: carControls.positionX, property: 'positionX' },
+                { name: 'Position Y', min: -1, max: 2, value: carControls.positionY, property: 'positionY' },
+                { name: 'Position Z', min: -3, max: 1, value: carControls.positionZ, property: 'positionZ' },
+                { name: 'Rotation Y', min: -Math.PI, max: Math.PI, value: carControls.rotationY, property: 'rotationY' }
+            ];
+
+            sliders.forEach((sliderConfig, index) => {
+                const yPos = -index * sliderSpacing;
+                
+                // Create slider background - larger for better AR interaction
+                const bgGeometry = new THREE.PlaneGeometry(sliderWidth, sliderHeight * 2.5);
+                const bgMaterial = new THREE.MeshBasicMaterial({ 
+                    color: 0x333333,
+                    transparent: true,
+                    opacity: 0.4
+                });
+                const background = new THREE.Mesh(bgGeometry, bgMaterial);
+                background.position.set(0, yPos, 0);
+                background.userData = { isSliderBackground: true };
+                slidersGroup.add(background);
+
+                // Create slider track
+                const trackGeometry = new THREE.PlaneGeometry(sliderWidth, sliderHeight);
+                const trackMaterial = new THREE.MeshBasicMaterial({ 
+                    color: 0x666666,
+                    transparent: true,
+                    opacity: 0.8
+                });
+                const track = new THREE.Mesh(trackGeometry, trackMaterial);
+                track.position.set(0, yPos, 0.001);
+                slidersGroup.add(track);
+
+                // Create slider handle - bigger for AR interaction
+                const handleGeometry = new THREE.BoxGeometry(0.12, sliderHeight * 1.8, 0.08);
+                const handleMaterial = new THREE.MeshBasicMaterial({ 
+                    color: 0xff6600,
+                    transparent: true,
+                    opacity: 0.9
+                });
+                const handle = new THREE.Mesh(handleGeometry, handleMaterial);
+                
+                // Calculate initial handle position
+                const normalizedValue = (sliderConfig.value - sliderConfig.min) / (sliderConfig.max - sliderConfig.min);
+                const handleX = (normalizedValue - 0.5) * sliderWidth;
+                handle.position.set(handleX, yPos, 0.01);
+                
+                // Store slider data
+                handle.userData = {
+                    isSlider: true,
+                    property: sliderConfig.property,
+                    min: sliderConfig.min,
+                    max: sliderConfig.max,
+                    background: background,
+                    sliderWidth: sliderWidth
+                };
+                
+                slidersGroup.add(handle);
+
+                // Create label
+                const canvas = document.createElement('canvas');
+                canvas.width = 200;
+                canvas.height = 50;
+                const context = canvas.getContext('2d');
+                
+                createGlassBackground(context, 200, 50, 8, 'rgba(0, 0, 0, 0.6)');
+                
+                context.fillStyle = '#ffffff';
+                context.font = 'Bold 12px Arial';
+                context.textAlign = 'left';
+                context.fillText(`${sliderConfig.name}: ${sliderConfig.value.toFixed(2)}`, 5, 30);
+
+                const labelTexture = new THREE.CanvasTexture(canvas);
+                const labelMaterial = new THREE.MeshBasicMaterial({ 
+                    map: labelTexture,
+                    transparent: true,
+                    opacity: 0.8,
+                    alphaTest: 0.01,
+                    side: THREE.DoubleSide
+                });
+                const labelGeometry = new THREE.PlaneGeometry(0.8, 0.2);
+                const label = new THREE.Mesh(labelGeometry, labelMaterial);
+                label.position.set(-1.2, yPos, 0);
+                
+                // Store label reference in handle for updates
+                handle.userData.label = label;
+                handle.userData.labelCanvas = canvas;
+                handle.userData.labelContext = context;
+                handle.userData.labelTexture = labelTexture;
+                handle.userData.sliderName = sliderConfig.name;
+                
+                slidersGroup.add(label);
+            });
+        }
+
+        function updateSliderLabel(handle, value) {
+            const userData = handle.userData;
+            
+            // Clear canvas
+            userData.labelContext.clearRect(0, 0, 200, 50);
+            
+            // Recreate background
+            createGlassBackground(userData.labelContext, 200, 50, 8, 'rgba(0, 0, 0, 0.6)');
+            
+            userData.labelContext.fillStyle = '#ffffff';
+            userData.labelContext.font = 'Bold 12px Arial';
+            userData.labelContext.textAlign = 'left';
+            userData.labelContext.fillText(`${userData.sliderName}: ${value.toFixed(2)}`, 5, 30);
+            userData.labelTexture.needsUpdate = true;
+        }
+
+        function updateAllSliders() {
+            // Find all slider handles in the scene and update their positions and labels
+            scene.traverse((child) => {
+                if (child.userData && child.userData.isSlider) {
+                    const slider = child;
+                    const userData = slider.userData;
+                    const currentValue = carControls[userData.property];
+                    
+                    // Update handle position
+                    const normalizedValue = (currentValue - userData.min) / (userData.max - userData.min);
+                    const handleX = (normalizedValue - 0.5) * userData.sliderWidth;
+                    slider.position.x = handleX;
+                    
+                    // Update label
+                    updateSliderLabel(slider, currentValue);
+                }
+            });
+        }
+
+        // Car discovery and loading functions
+        function generateCarName(filename) {
+            return filename
+                .replace('.glb', '')
+                .replace(/[_-]/g, ' ')
+                .split(' ')
+                .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                .join(' ');
+        }
+
+        async function discoverCarModels() {
+            console.log('🔍 Discovering available car models...');
+            
+            for (const filename of knownModels) {
+                try {
+                    const response = await fetch(`./models/${filename}`, { method: 'HEAD' });
+                    if (response.ok) {
+                        const carInfo = {
+                            name: generateCarName(filename),
+                            path: `./models/${filename}`,
+                            scale: 0.5, // Smaller scale for AR
+                            position: { x: 0, y: 0, z: -1.5 }, // Closer for AR
+                            rotation: { x: 0, y: 0, z: 0 }
+                        };
+                        carData.push(carInfo);
+                        console.log(`✅ Found model: ${carInfo.name}`);
+                    }
+                } catch (error) {
+                    console.log(`⚠️ Error checking ${filename}:`, error);
+                }
+            }
+            
+            if (carData.length === 0) {
+                carData = [{
+                    name: "Fallback Car",
+                    path: "./models/fallback.glb",
+                    scale: 0.5,
+                    position: { x: 0, y: 0, z: -1.5 },
+                    rotation: { x: 0, y: 0, z: 0 }
+                }];
+            }
+            
+            console.log(`🎉 Discovered ${carData.length} car models`);
+        }
+
+        function loadCars() {
+            const loader = new GLTFLoader();
+            let loadedCount = 0;
+
+            carData.forEach((carInfo, index) => {
+                loader.load(
+                    carInfo.path,
+                    (gltf) => {
+                        const model = gltf.scene;
+                        
+                        // Normalize model
+                        const box = new THREE.Box3().setFromObject(model);
+                        const size = box.getSize(new THREE.Vector3()).length();
+                        const scale = carInfo.scale / size;
+                        model.scale.setScalar(scale);
+                        
+                        // Position model
+                        model.position.copy(carInfo.position);
+                        model.rotation.copy(carInfo.rotation);
+                        
+                        // Enable shadows
+                        model.traverse((child) => {
+                            if (child.isMesh) {
+                                child.castShadow = true;
+                                child.receiveShadow = true;
+                                
+                                // Make materials slightly more opaque for AR
+                                if (child.material) {
+                                    if (child.material.transparent) {
+                                        child.material.opacity = Math.max(child.material.opacity, 0.8);
+                                    }
+                                }
+                            }
+                        });
+
+                        carModels[index] = model;
+                        
+                        // Load audio
+                        loadCarAudio(carInfo, model).then((audio) => {
+                            if (audio && index === 0) {
+                                currentCarAudio = audio;
+                            }
+                        });
+                        
+                        loadedCount++;
+
+                        // Show first car initially
+                        if (index === 0) {
+                            scene.add(model);
+                            cars.push(model);
+                            
+                            carControls = {
+                                scale: 1.0,
+                                positionX: 0,
+                                positionY: 0,
+                                positionZ: 0,
+                                rotationY: 0
+                            };
+                            
+                            originalCarProperties = {
+                                position: { 
+                                    x: model.position.x, 
+                                    y: model.position.y, 
+                                    z: model.position.z 
+                                },
+                                scale: model.scale.x,
+                                rotation: { 
+                                    x: model.rotation.x, 
+                                    y: model.rotation.y, 
+                                    z: model.rotation.z 
+                                }
+                            };
+                            
+                            updateCarNameDisplay(carInfo.name);
+                            updateAllSliders(); // Update sliders to match initial values
+                            console.log('✅ First car added to scene');
+                        }
+
+                        if (loadedCount === carData.length) {
+                            loadingElement.style.display = 'none';
+                            console.log('🎉 All cars loaded!');
+                        }
+                    },
+                    (progress) => {
+                        console.log(`📦 Loading ${carInfo.name}: ${(progress.loaded / progress.total * 100).toFixed(1)}%`);
+                    },
+                    (error) => {
+                        console.error(`❌ Error loading ${carInfo.name}:`, error);
+                        loadedCount++;
+                        if (loadedCount === carData.length) {
+                            loadingElement.style.display = 'none';
+                        }
+                    }
+                );
+            });
+        }
+
+        async function initializeCarSystem() {
+            try {
+                await discoverCarModels();
+                loadCars();
+            } catch (error) {
+                console.error('❌ Error initializing car system:', error);
+                loadingElement.textContent = 'Error loading cars';
+            }
+        }
+
+        // Audio functions
+        function loadCarAudio(carInfo, carModel) {
+            return new Promise((resolve) => {
+                const audioFilename = carInfo.path.replace('./models/', './audios/').replace('.glb', '.mp3');
+                
+                fetch(audioFilename, { method: 'HEAD' })
+                    .then(response => {
+                        if (!response.ok) {
+                            const fallbackAudio = './audios/2018_bmw_m4_coupe_f82_lci.mp3';
+                            loadAudioFile(fallbackAudio, carModel, carInfo.name, resolve);
+                        } else {
+                            loadAudioFile(audioFilename, carModel, carInfo.name, resolve);
+                        }
+                    })
+                    .catch(() => resolve(null));
+            });
+        }
+
+        function loadAudioFile(audioFilename, carModel, carName, resolve) {
+            const sound = new THREE.PositionalAudio(audioListener);
+            
+            audioLoader.load(
+                audioFilename,
+                (buffer) => {
+                    sound.setBuffer(buffer);
+                    sound.setRefDistance(2);
+                    sound.setMaxDistance(15);
+                    sound.setRolloffFactor(1.5);
+                    sound.setLoop(false);
+                    sound.setVolume(0.6); // Slightly quieter for AR
+                    
+                    carModel.add(sound);
+                    carModel.userData.audio = sound;
+                    
+                    resolve(sound);
+                },
+                undefined,
+                () => resolve(null)
+            );
+        }
+
+        function playCarStartup() {
+            let audio = null;
+            
+            if (cars[0] && cars[0].userData.audio) {
+                audio = cars[0].userData.audio;
+            } else if (currentCarAudio) {
+                audio = currentCarAudio;
+            }
+            
+            if (audio) {
+                if (audio.isPlaying) {
+                    audio.stop();
+                }
+                
+                try {
+                    audio.play();
+                    console.log('🔊 Playing car startup/revving sound');
+                } catch (error) {
+                    console.error('❌ Error playing audio:', error);
+                }
+            }
+        }
+
+        function stopCarAudio() {
+            if (cars[0] && cars[0].userData.audio && cars[0].userData.audio.isPlaying) {
+                cars[0].userData.audio.stop();
+            }
+            
+            if (currentCarAudio && currentCarAudio.isPlaying && 
+                currentCarAudio !== (cars[0] && cars[0].userData.audio)) {
+                currentCarAudio.stop();
+            }
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            // Check for button press on left controller to toggle GUI
+            if (renderer.xr.isPresenting && controller1 && controller1.userData.gamepad) {
+                const gamepad = controller1.userData.gamepad;
+                if (gamepad.buttons && gamepad.buttons.length > 0) {
+                    // Try different button indices - X (3), Y (2), A (0), B (1)
+                    const buttonIndices = [3, 2, 0, 1]; // X, Y, A, B
+                    
+                    for (let i = 0; i < buttonIndices.length; i++) {
+                        const buttonIndex = buttonIndices[i];
+                        if (buttonIndex < gamepad.buttons.length) {
+                            const buttonPressed = gamepad.buttons[buttonIndex].pressed;
+                            
+                            // Detect button press (not held)
+                            if (buttonPressed && !previousXButtonState) {
+                                toggleGUIVisibility();
+                                console.log(`🎮 GUI visibility toggled using button ${buttonIndex}:`, guiVisible ? 'ON' : 'OFF');
+                                break; // Stop checking other buttons
+                            }
+                        }
+                    }
+                    
+                    // Update previous state using first available button
+                    previousXButtonState = gamepad.buttons[0].pressed;
+                }
+            }
+
+            // Handle controller slider dragging in AR mode
+            if (renderer.xr.isPresenting) {
+                [controller1, controller2].forEach(controller => {
+                    if (controller && controller.userData.selectedSlider) {
+                        const slider = controller.userData.selectedSlider;
+                        const userData = slider.userData;
+                        
+                        // Get controller intersection point for dragging
+                        const intersections = getIntersections(controller);
+                        if (intersections.length > 0) {
+                            // Find intersection with slider background
+                            const sliderIntersection = intersections.find(intersection => 
+                                intersection.object.userData.isSliderBackground || 
+                                intersection.object === slider
+                            );
+                            
+                            if (sliderIntersection) {
+                                // Calculate new slider position
+                                const localX = sliderIntersection.point.x - slider.parent.position.x;
+                                const clampedX = Math.max(-userData.sliderWidth/2, Math.min(userData.sliderWidth/2, localX));
+                                
+                                // Update slider handle position
+                                slider.position.x = clampedX;
+                                
+                                // Calculate new value
+                                const normalizedX = (clampedX + userData.sliderWidth/2) / userData.sliderWidth;
+                                const newValue = userData.min + normalizedX * (userData.max - userData.min);
+                                
+                                // Update car controls
+                                carControls[userData.property] = newValue;
+                                
+                                // Update car transform
+                                updateCarTransform();
+                                
+                                // Update label
+                                updateSliderLabel(slider, newValue);
+                            }
+                        }
+                    }
+                });
+            }
+
+            // Auto-rotate car if enabled
+            if (isRotating && cars[0]) {
+                carControls.rotationY = (carControls.rotationY + 0.01) % (Math.PI * 2);
+                updateCarTransform();
+                
+                // Update rotation slider if it exists (only occasionally for performance)
+                if (Math.floor(Date.now() / 100) % 10 === 0) { // Update every second
+                    updateAllSliders();
+                }
+            }
+
+            // Update controls when not in AR mode
+            if (controls.enabled) {
+                controls.update();
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // Utility functions for glass-like UI effects
+        function roundRect(ctx, x, y, width, height, radius) {
+            ctx.beginPath();
+            ctx.moveTo(x + radius, y);
+            ctx.lineTo(x + width - radius, y);
+            ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+            ctx.lineTo(x + width, y + height - radius);
+            ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+            ctx.lineTo(x + radius, y + height);
+            ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+            ctx.lineTo(x, y + radius);
+            ctx.quadraticCurveTo(x, y, x + radius, y);
+            ctx.closePath();
+        }
+
+        function createGlassBackground(context, width, height, borderRadius, backgroundColor) {
+            context.clearRect(0, 0, width, height);
+            
+            // Create rounded rectangle path
+            roundRect(context, 0, 0, width, height, borderRadius);
+            
+            // Fill with background color
+            context.fillStyle = backgroundColor;
+            context.fill();
+            
+            // Create glass effect gradient
+            const gradient = context.createLinearGradient(0, 0, 0, height);
+            gradient.addColorStop(0, 'rgba(255, 255, 255, 0.3)');
+            gradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.1)');
+            gradient.addColorStop(1, 'rgba(255, 255, 255, 0.05)');
+            
+            context.fillStyle = gradient;
+            context.fill();
+        }
+    </script>
+</body>
+</html>
