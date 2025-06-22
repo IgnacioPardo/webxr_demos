@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BMW Car Viewer - VR/AR Experience</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: white;
+        }
+
+        .container {
+            text-align: center;
+            max-width: 800px;
+            padding: 2rem;
+        }
+
+        h1 {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .subtitle {
+            font-size: 1.2rem;
+            margin-bottom: 3rem;
+            opacity: 0.9;
+        }
+
+        .buttons-container {
+            display: flex;
+            gap: 2rem;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .mode-button {
+            display: inline-block;
+            padding: 2rem 3rem;
+            font-size: 1.5rem;
+            font-weight: bold;
+            text-decoration: none;
+            border-radius: 20px;
+            transition: all 0.3s ease;
+            border: 3px solid transparent;
+            min-width: 250px;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+        }
+
+        .vr-button {
+            background: linear-gradient(45deg, #ff6600, #ff9900);
+            color: white;
+        }
+
+        .vr-button:hover {
+            background: linear-gradient(45deg, #ff7700, #ffaa00);
+            transform: translateY(-5px);
+            box-shadow: 0 12px 35px rgba(255, 102, 0, 0.4);
+        }
+
+        .ar-button {
+            background: linear-gradient(45deg, #00aa44, #00cc55);
+            color: white;
+        }
+
+        .ar-button:hover {
+            background: linear-gradient(45deg, #00bb55, #00dd66);
+            transform: translateY(-5px);
+            box-shadow: 0 12px 35px rgba(0, 170, 68, 0.4);
+        }
+
+        .icon {
+            font-size: 2rem;
+            display: block;
+            margin-bottom: 0.5rem;
+        }
+
+        .description {
+            margin-top: 3rem;
+            padding: 1.5rem;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+        }
+
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 2rem;
+            }
+            
+            .buttons-container {
+                flex-direction: column;
+                align-items: center;
+            }
+            
+            .mode-button {
+                min-width: 200px;
+                padding: 1.5rem 2rem;
+                font-size: 1.2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚗 BMW Car Viewer</h1>
+        <p class="subtitle">Experiencia inmersiva en realidad virtual y aumentada</p>
+        
+        <div class="buttons-container">
+            <a href="vr_car_viewer.html" class="mode-button vr-button">
+                <span class="icon">🥽</span>
+                Modo VR
+                <div style="font-size: 0.9rem; margin-top: 0.5rem; opacity: 0.9;">
+                    Realidad Virtual
+                </div>
+            </a>
+            
+            <a href="vr_car_viewer_passthrough.html" class="mode-button ar-button">
+                <span class="icon">📱</span>
+                Modo AR
+                <div style="font-size: 0.9rem; margin-top: 0.5rem; opacity: 0.9;">
+                    Realidad Aumentada
+                </div>
+            </a>
+        </div>
+        
+        <div class="description">
+            <p><strong>Modo VR:</strong> Sumérgete en un showroom virtual completo con iluminación hexagonal y controles inmersivos.</p>
+            <br>
+            <p><strong>Modo AR:</strong> Ve los autos BMW superpuestos en tu entorno real con todas las funciones de control.</p>
+        </div>
+    </div>
+</body>
+</html>
