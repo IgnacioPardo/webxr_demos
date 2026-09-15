@@ -5,79 +5,116 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚗</text></svg>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500&display=swap" rel="stylesheet">
     <style>
         body {
             margin: 0;
-            background-color: #000;
-            color: #fff;
-            font-family: Monospace;
+            background-color: #07080b;
+            color: #eef1f6;
+            font-family: 'Inter', system-ui, sans-serif;
             font-size: 13px;
-            line-height: 24px;
             overscroll-behavior: none;
         }
 
         #info {
             position: absolute;
-            top: 10px;
-            width: 100%;
-            text-align: center;
+            top: 16px;
+            left: 50%;
+            transform: translateX(-50%);
             z-index: 100;
-            display: block;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 9px 16px;
+            border-radius: 999px;
+            background: rgba(14, 18, 24, 0.66);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(10px);
+            font-size: 12px;
+            letter-spacing: 0.02em;
+            color: #b9c0cc;
+            white-space: nowrap;
+            max-width: 92vw;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
-
-        #info a, .button {
-            color: #f00;
-            font-weight: normal;
-            text-decoration-line: underline;
-            cursor: pointer;
-        }
+        #info b { color: #eef1f6; font-family: 'Space Grotesk', sans-serif; font-weight: 600; }
+        #info .accent { color: #ff9d4d; }
 
         .loading {
             position: absolute;
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            font-size: 16px;
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 15px;
+            letter-spacing: 0.04em;
+            color: #cdd4df;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 16px;
         }
+        .loading::before {
+            content: "";
+            width: 34px; height: 34px;
+            border-radius: 50%;
+            border: 2px solid rgba(82, 224, 255, 0.2);
+            border-top-color: #52e0ff;
+            animation: spin 0.9s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
 
         #arButton {
             position: absolute;
-            bottom: 20px;
+            bottom: 28px;
             left: 50%;
             transform: translateX(-50%);
-            padding: 15px 30px;
-            background: linear-gradient(45deg, #ff6600, #ff9900);
-            color: white;
-            border: none;
-            border-radius: 10px;
-            font-size: 16px;
-            font-weight: bold;
+            padding: 15px 34px;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            background: linear-gradient(135deg, rgba(82,224,255,0.16), rgba(20,24,32,0.9));
+            color: #eef1f6;
+            border: 1px solid rgba(82, 224, 255, 0.5);
+            border-radius: 12px;
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 15px;
+            font-weight: 600;
+            letter-spacing: 0.02em;
             cursor: pointer;
-            box-shadow: 0 4px 15px rgba(255, 102, 0, 0.3);
-            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 10px 30px -12px rgba(82, 224, 255, 0.5);
+            transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
         }
-
+        #arButton::before {
+            content: "";
+            width: 8px; height: 8px; border-radius: 50%;
+            background: #52e0ff; box-shadow: 0 0 10px #52e0ff;
+        }
         #arButton:hover {
-            background: linear-gradient(45deg, #ff7700, #ffaa00);
-            box-shadow: 0 6px 20px rgba(255, 102, 0, 0.4);
-            transform: translateX(-50%) translateY(-2px);
+            transform: translateX(-50%) translateY(-3px);
+            box-shadow: 0 16px 40px -12px rgba(82, 224, 255, 0.6);
+            border-color: rgba(82, 224, 255, 0.9);
         }
-
         #arButton:disabled {
-            opacity: 0.5;
+            opacity: 0.45;
             cursor: not-allowed;
+            border-color: rgba(255,255,255,0.15);
+            box-shadow: none;
         }
+        #arButton:disabled::before { background: #565d6b; box-shadow: none; }
     </style>
 </head>
 <body>
     <div id="info">
-        <a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> VR Car Viewer AR Passthrough - BMW Collection<br/>
-        AR Mode: See cars overlaid on your real environment • Use controllers to interact with UI
+        <span class="accent">◆</span> <b>APEX·XR</b> <span>Passthrough AR</span> · Place the car in your space · Point &amp; trigger to interact
     </div>
 
-    <div id="loading" class="loading">Loading BMW Models...</div>
+    <div id="loading" class="loading">Preparing the studio…</div>
 
-    <button id="arButton">Enter AR Passthrough</button>
+    <button id="arButton">Enter Passthrough AR</button>
 
     <script type="importmap">
         {
@@ -93,6 +130,10 @@
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
         import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+        const STUDIO = { accent: 0x52e0ff, amber: 0xff9d4d };
+        let carEnvIntensity = 1.1;
 
         let camera, scene, renderer, environment;
         let currentCarIndex = 0;
@@ -183,43 +224,30 @@
             camera.add(audioListener);
             audioLoader = new THREE.AudioLoader();
 
-            // Lighting - adjusted for AR environment
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); // Brighter for AR
+            // Lighting - soft fill so real-world passthrough still reads on the car
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.45);
             scene.add(ambientLight);
 
-            const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0); // Brighter for AR
-            directionalLight.position.set(5, 10, 5);
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1.1);
+            directionalLight.position.set(4, 8, 5);
             directionalLight.castShadow = true;
             directionalLight.shadow.mapSize.setScalar(1024);
             directionalLight.shadow.camera.near = 0.1;
-            directionalLight.shadow.camera.far = 50;
-            directionalLight.shadow.camera.left = -10;
-            directionalLight.shadow.camera.right = 10;
-            directionalLight.shadow.camera.top = 10;
-            directionalLight.shadow.camera.bottom = -10;
+            directionalLight.shadow.camera.far = 30;
+            directionalLight.shadow.camera.left = -5;
+            directionalLight.shadow.camera.right = 5;
+            directionalLight.shadow.camera.top = 5;
+            directionalLight.shadow.camera.bottom = -5;
+            directionalLight.shadow.bias = -0.0004;
             scene.add(directionalLight);
 
-            // Add a subtle grid helper for spatial reference (semi-transparent)
-            const gridHelper = new THREE.GridHelper(4, 20, 0x444444, 0x444444);
-            gridHelper.material.transparent = true;
-            gridHelper.material.opacity = 0.3;
-            gridHelper.material.depthTest = false; // avoid z-fighting
-            gridHelper.position.y = -0.01; // Slightly below ground level
-            scene.add(gridHelper);
+            // Cool accent kicker to give the paint a studio edge highlight
+            const kicker = new THREE.DirectionalLight(STUDIO.accent, 0.4);
+            kicker.position.set(-4, 3, -3);
+            scene.add(kicker);
 
-            // Optional: Add a semi-transparent floor plane for shadows
-            const floorGeometry = new THREE.PlaneGeometry(4, 4);
-            const floorMaterial = new THREE.MeshStandardMaterial({
-                color: 0x888888,
-                transparent: true,
-                opacity: 0.1,
-                roughness: 1.0,
-                metalness: 0.0
-            });
-            const floor = new THREE.Mesh(floorGeometry, floorMaterial);
-            floor.rotation.x = -Math.PI / 2;
-            floor.receiveShadow = true;
-            scene.add(floor);
+            // A tidy detailing stage under the car: glowing ring + soft contact shadow
+            createGroundStage();
 
             // Renderer - CRITICAL: alpha: true for passthrough
             renderer = new THREE.WebGLRenderer({ 
@@ -230,11 +258,18 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setAnimationLoop(animate);
             renderer.xr.enabled = true;
-            // renderer.shadowMap.enabled = true;
-            // renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-            // renderer.outputColorSpace = THREE.SRGBColorSpace;
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.outputColorSpace = THREE.SRGBColorSpace;
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.05;
 
             document.body.appendChild(renderer.domElement);
+
+            // Image-based lighting for realistic reflections (background stays transparent for passthrough)
+            const pmrem = new THREE.PMREMGenerator(renderer);
+            environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+            scene.environment = environment;
 
             // AR Button setup
             setupARButton();
@@ -250,6 +285,48 @@
 
             // Event listeners
             window.addEventListener('resize', onWindowResize);
+        }
+
+        // A subtle detailing stage: a glowing ring, a soft AO blob, and a real cast shadow
+        function createGroundStage() {
+            const stage = new THREE.Group();
+            stage.position.set(0, 0, -1.5); // under the car's default spot
+            scene.add(stage);
+
+            // Glowing accent ring
+            const ring = new THREE.Mesh(
+                new THREE.TorusGeometry(0.4, 0.006, 10, 64),
+                new THREE.MeshStandardMaterial({ color: STUDIO.accent, emissive: STUDIO.accent, emissiveIntensity: 2.2 })
+            );
+            ring.rotation.x = -Math.PI / 2;
+            ring.position.y = 0.003;
+            stage.add(ring);
+
+            // Soft radial contact blob (canvas gradient) for a grounded look even without cast shadow
+            const c = document.createElement('canvas');
+            c.width = c.height = 256;
+            const g = c.getContext('2d');
+            const grad = g.createRadialGradient(128, 128, 10, 128, 128, 128);
+            grad.addColorStop(0, 'rgba(0,0,0,0.42)');
+            grad.addColorStop(0.55, 'rgba(0,0,0,0.18)');
+            grad.addColorStop(1, 'rgba(0,0,0,0)');
+            g.fillStyle = grad; g.fillRect(0, 0, 256, 256);
+            const blob = new THREE.Mesh(
+                new THREE.PlaneGeometry(1.0, 1.0),
+                new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false })
+            );
+            blob.rotation.x = -Math.PI / 2;
+            blob.position.y = 0.001;
+            stage.add(blob);
+
+            // Real cast-shadow catcher (only the shadow shows, floor stays transparent for passthrough)
+            const shadowCatcher = new THREE.Mesh(
+                new THREE.PlaneGeometry(3, 3),
+                new THREE.ShadowMaterial({ opacity: 0.35 })
+            );
+            shadowCatcher.rotation.x = -Math.PI / 2;
+            shadowCatcher.receiveShadow = true;
+            stage.add(shadowCatcher);
         }
 
         function setupARButton() {
@@ -384,7 +461,7 @@
             ]);
             
             const rayMaterial = new THREE.LineBasicMaterial({ 
-                color: 0x00ff00, 
+                color: 0x52e0ff, 
                 transparent: true, 
                 opacity: 0.6 
             });
@@ -395,9 +472,9 @@
             controller2.add(rayLine2);
             
             // Add targeting reticles
-            const reticleGeometry = new THREE.RingGeometry(0.02, 0.04, 8);
+            const reticleGeometry = new THREE.RingGeometry(0.02, 0.04, 24);
             const reticleMaterial = new THREE.MeshBasicMaterial({ 
-                color: 0x00ff00, 
+                color: 0x52e0ff, 
                 transparent: true, 
                 opacity: 0.8,
                 side: THREE.DoubleSide
@@ -423,7 +500,7 @@
             geometry.rotateX(-Math.PI / 2);
             const material = new THREE.MeshStandardMaterial({ 
                 flatShading: true,
-                color: 0xff6600,
+                color: 0xff9d4d,
                 transparent: true,
                 opacity: 0.8
             });
@@ -449,12 +526,7 @@
             canvas.height = 128;
             const context = canvas.getContext('2d');
             
-            createGlassBackground(context, 512, 128, 20, 'rgba(0, 20, 40, 0.8)'); // More opaque for AR
-            
-            context.fillStyle = '#ffffff';
-            context.font = 'Bold 32px Arial';
-            context.textAlign = 'center';
-            context.fillText('Loading...', 256, 64);
+            drawCarName(context, 'Loading…');
 
             const carNameTexture = new THREE.CanvasTexture(canvas);
             const carNameMaterial = new THREE.MeshBasicMaterial({ 
@@ -491,17 +563,7 @@
             canvas.height = 64;
             const context = canvas.getContext('2d');
             
-            createGlassBackground(context, 256, 64, 15, 'rgba(255, 102, 0, 0.7)'); // More opaque for AR
-            
-            context.strokeStyle = 'rgba(255, 255, 255, 0.6)';
-            context.lineWidth = 2;
-            roundRect(context, 1, 1, 254, 62, 15);
-            context.stroke();
-            
-            context.fillStyle = '#ffffff';
-            context.font = 'Bold 18px Arial';
-            context.textAlign = 'center';
-            context.fillText(text, 128, 36);
+            drawButtonFace(context, text);
 
             const texture = new THREE.CanvasTexture(canvas);
             const material = new THREE.MeshBasicMaterial({ 
@@ -526,12 +588,14 @@
             canvas.height = 64;
             const context = canvas.getContext('2d');
             
-            createGlassBackground(context, 512, 64, 15, 'rgba(0, 100, 200, 0.6)');
-            
-            context.fillStyle = '#ffffff';
-            context.font = 'Bold 16px Arial';
+            createGlassBackground(context, 512, 64, 14, 'rgba(20,24,32,0.86)');
+
+            context.fillStyle = '#b9c0cc';
+            context.font = '500 15px "Space Grotesk", Arial, sans-serif';
             context.textAlign = 'center';
-            context.fillText('Press Any Button on Left Controller to Hide/Show GUI', 256, 36);
+            context.textBaseline = 'middle';
+            context.fillText('Left controller button · hide / show controls', 256, 33);
+            context.textBaseline = 'alphabetic';
 
             const texture = new THREE.CanvasTexture(canvas);
             const material = new THREE.MeshBasicMaterial({ 
@@ -770,37 +834,57 @@
             console.log('   Rotation Y (actual):', cars[0].rotation.y.toFixed(3), 'radians =', (cars[0].rotation.y * 180 / Math.PI).toFixed(1), 'degrees');
         }
 
+        // Shared premium button face
+        function drawButtonFace(context, text) {
+            createGlassBackground(context, 256, 64, 14, 'rgba(20,24,32,0.86)');
+
+            context.fillStyle = 'rgba(82, 224, 255, 0.95)';
+            context.beginPath();
+            context.arc(26, 32, 4, 0, Math.PI * 2);
+            context.fill();
+            context.shadowColor = 'rgba(82, 224, 255, 0.8)';
+            context.shadowBlur = 8;
+            context.fill();
+            context.shadowBlur = 0;
+
+            context.fillStyle = '#eef1f6';
+            context.font = '600 19px "Space Grotesk", Arial, sans-serif';
+            context.textAlign = 'center';
+            context.textBaseline = 'middle';
+            context.fillText(text, 136, 33);
+            context.textBaseline = 'alphabetic';
+        }
+
         function updateButtonText(button, newText) {
             const userData = button.userData;
-            
             userData.context.clearRect(0, 0, 256, 64);
-            createGlassBackground(userData.context, 256, 64, 15, 'rgba(255, 102, 0, 0.7)');
-            
-            userData.context.strokeStyle = 'rgba(255, 255, 255, 0.6)';
-            userData.context.lineWidth = 2;
-            roundRect(userData.context, 1, 1, 254, 62, 15);
-            userData.context.stroke();
-            
-            userData.context.fillStyle = '#ffffff';
-            userData.context.font = 'Bold 18px Arial';
-            userData.context.textAlign = 'center';
-            userData.context.fillText(newText, 128, 36);
+            drawButtonFace(userData.context, newText);
             userData.texture.needsUpdate = true;
+        }
+
+        function drawCarName(context, carName) {
+            context.clearRect(0, 0, 512, 128);
+            createGlassBackground(context, 512, 128, 18, 'rgba(0,20,40,0.8)');
+
+            context.textAlign = 'center';
+            context.fillStyle = 'rgba(82, 224, 255, 0.9)';
+            context.font = '600 15px "Space Grotesk", Arial, sans-serif';
+            context.fillText('N O W   S H O W I N G', 256, 42);
+
+            context.fillStyle = '#ffffff';
+            let size = 34;
+            context.font = `600 ${size}px "Space Grotesk", Arial, sans-serif`;
+            while (context.measureText(carName).width > 470 && size > 16) {
+                size -= 2;
+                context.font = `600 ${size}px "Space Grotesk", Arial, sans-serif`;
+            }
+            context.fillText(carName, 256, 84);
         }
 
         function updateCarNameDisplay(carName) {
             if (!carNameText) return;
-            
             const canvas = carNameText.material.map.image;
-            const context = canvas.getContext('2d');
-            
-            context.clearRect(0, 0, 512, 128);
-            createGlassBackground(context, 512, 128, 20, 'rgba(0, 20, 40, 0.8)');
-            
-            context.fillStyle = '#ffffff';
-            context.font = 'Bold 24px Arial';
-            context.textAlign = 'center';
-            context.fillText(carName, 256, 64);
+            drawCarName(canvas.getContext('2d'), carName);
             carNameText.material.map.needsUpdate = true;
         }
 
@@ -853,10 +937,12 @@
 
                 // Create slider handle - bigger for AR interaction
                 const handleGeometry = new THREE.BoxGeometry(0.12, sliderHeight * 1.8, 0.08);
-                const handleMaterial = new THREE.MeshBasicMaterial({ 
-                    color: 0xff6600,
+                const handleMaterial = new THREE.MeshStandardMaterial({
+                    color: STUDIO.accent,
+                    emissive: STUDIO.accent,
+                    emissiveIntensity: 1.4,
                     transparent: true,
-                    opacity: 0.9
+                    opacity: 0.95
                 });
                 const handle = new THREE.Mesh(handleGeometry, handleMaterial);
                 
@@ -1013,18 +1099,23 @@
                         model.position.copy(carInfo.position);
                         model.rotation.copy(carInfo.rotation);
                         
-                        // Enable shadows
+                        // Enable shadows + feed studio reflections into the paint
                         model.traverse((child) => {
                             if (child.isMesh) {
                                 child.castShadow = true;
                                 child.receiveShadow = true;
-                                
-                                // Make materials slightly more opaque for AR
-                                if (child.material) {
-                                    if (child.material.transparent) {
-                                        child.material.opacity = Math.max(child.material.opacity, 0.8);
+
+                                const mats = Array.isArray(child.material) ? child.material : [child.material];
+                                mats.forEach((mat) => {
+                                    if (!mat) return;
+                                    if (mat.transparent) {
+                                        mat.opacity = Math.max(mat.opacity, 0.8);
                                     }
-                                }
+                                    if ('envMapIntensity' in mat) {
+                                        mat.envMapIntensity = carEnvIntensity;
+                                        mat.needsUpdate = true;
+                                    }
+                                });
                             }
                         });
 
@@ -1284,24 +1375,36 @@
             ctx.closePath();
         }
 
-        function createGlassBackground(context, width, height, borderRadius, backgroundColor) {
+        // Premium dark-glass panel (matches the VR studio + landing page)
+        function createGlassBackground(context, width, height, borderRadius, backgroundColor, accentColor) {
             context.clearRect(0, 0, width, height);
-            
-            // Create rounded rectangle path
-            roundRect(context, 0, 0, width, height, borderRadius);
-            
-            // Fill with background color
-            context.fillStyle = backgroundColor;
-            context.fill();
-            
-            // Create glass effect gradient
+            const accent = accentColor || 'rgba(82, 224, 255, 0.9)';
+
             const gradient = context.createLinearGradient(0, 0, 0, height);
-            gradient.addColorStop(0, 'rgba(255, 255, 255, 0.3)');
-            gradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.1)');
-            gradient.addColorStop(1, 'rgba(255, 255, 255, 0.05)');
-            
+            gradient.addColorStop(0, 'rgba(20, 24, 32, 0.86)');
+            gradient.addColorStop(1, 'rgba(9, 11, 15, 0.92)');
             context.fillStyle = gradient;
+            roundRect(context, 0, 0, width, height, borderRadius);
             context.fill();
+
+            const sheen = context.createLinearGradient(0, 0, 0, height * 0.5);
+            sheen.addColorStop(0, 'rgba(255, 255, 255, 0.10)');
+            sheen.addColorStop(1, 'rgba(255, 255, 255, 0)');
+            context.fillStyle = sheen;
+            roundRect(context, 0, 0, width, height * 0.5, borderRadius);
+            context.fill();
+
+            context.strokeStyle = 'rgba(255, 255, 255, 0.14)';
+            context.lineWidth = 1.5;
+            roundRect(context, 1, 1, width - 2, height - 2, borderRadius);
+            context.stroke();
+
+            context.strokeStyle = accent;
+            context.lineWidth = 2;
+            context.beginPath();
+            context.moveTo(borderRadius + 4, height - 2);
+            context.lineTo(width - borderRadius - 4, height - 2);
+            context.stroke();
         }
     </script>
 </body>

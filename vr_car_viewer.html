@@ -5,49 +5,75 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚗</text></svg>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500&display=swap" rel="stylesheet">
     <style>
         body {
             margin: 0;
-            background-color: #000;
-            color: #fff;
-            font-family: Monospace;
+            background-color: #07080b;
+            color: #eef1f6;
+            font-family: 'Inter', system-ui, sans-serif;
             font-size: 13px;
-            line-height: 24px;
             overscroll-behavior: none;
         }
 
         #info {
             position: absolute;
-            top: 10px;
-            width: 100%;
-            text-align: center;
+            top: 16px;
+            left: 50%;
+            transform: translateX(-50%);
             z-index: 100;
-            display: block;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 9px 16px;
+            border-radius: 999px;
+            background: rgba(14, 18, 24, 0.66);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(10px);
+            font-size: 12px;
+            letter-spacing: 0.02em;
+            color: #b9c0cc;
+            white-space: nowrap;
+            max-width: 92vw;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
-
-        #info a, .button {
-            color: #f00;
-            font-weight: normal;
-            text-decoration-line: underline;
-            cursor: pointer;
-        }
+        #info b { color: #eef1f6; font-family: 'Space Grotesk', sans-serif; font-weight: 600; }
+        #info .accent { color: #52e0ff; }
+        #info a { color: #52e0ff; text-decoration: none; }
 
         .loading {
             position: absolute;
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            font-size: 16px;
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 15px;
+            letter-spacing: 0.04em;
+            color: #cdd4df;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 16px;
         }
+        .loading::before {
+            content: "";
+            width: 34px; height: 34px;
+            border-radius: 50%;
+            border: 2px solid rgba(82, 224, 255, 0.2);
+            border-top-color: #52e0ff;
+            animation: spin 0.9s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
     <div id="info">
-        <a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> VR Car Viewer - BMW Collection<br/>
-        VR Navigation: Use thumbsticks to move and rotate • Interact with UI panels • Reset position with button
+        <span class="accent">◆</span> <b>APEX·XR</b> <span>Detailing Studio</span> · Thumbsticks move &amp; rotate · Point &amp; trigger to interact
     </div>
 
-    <div id="loading" class="loading">Loading BMW Models...</div>
+    <div id="loading" class="loading">Preparing the studio…</div>
 
     <script type="importmap">
         {
@@ -64,6 +90,19 @@
         import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
         import { VRButton } from 'three/addons/webxr/VRButton.js';
         import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
+        import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+        import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
+
+        // Studio design tokens (kept in sync with the landing page)
+        const STUDIO = {
+            accent: 0x52e0ff,   // detailing softbox / accent cyan
+            amber:  0xff9d4d,    // warm rim accent
+            floor:  0x0a0c10,
+            wall:   0x111318,
+            rim:    0x2a3038
+        };
+        let turntable;           // rotating stage under the car
+        let carEnvIntensity = 1.15;
 
         let camera, scene, renderer, environment;
         let currentCarIndex = 0;
@@ -128,9 +167,12 @@
         function init() {
             loadingElement = document.getElementById('loading');
 
-            // Scene setup - darker background to highlight hexagonal lighting
+            // Scene setup - deep charcoal garage with a touch of atmospheric fog
             scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x0f0f0f); // Much darker background
+            scene.background = new THREE.Color(0x07080b);
+            scene.fog = new THREE.FogExp2(0x07080b, 0.028);
+
+            RectAreaLightUniformsLib.init();
 
             // Camera
             camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -145,57 +187,64 @@
             camera.add(audioListener);
             audioLoader = new THREE.AudioLoader();
 
-            // Lighting - simplified and optimized
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+            // Low ambient — the studio softboxes and IBL do most of the lighting work
+            const ambientLight = new THREE.AmbientLight(0xaecbe0, 0.18);
             scene.add(ambientLight);
 
-            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-            directionalLight.position.set(5, 10, 5);
+            // Key light from above/front for the primary shadow
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1.4);
+            directionalLight.position.set(4, 9, 6);
             directionalLight.castShadow = true;
-            directionalLight.shadow.mapSize.setScalar(1024); // Reduced shadow resolution
-            directionalLight.shadow.camera.near = 0.1;
-            directionalLight.shadow.camera.far = 50;
-            directionalLight.shadow.camera.left = -10;
-            directionalLight.shadow.camera.right = 10;
-            directionalLight.shadow.camera.top = 10;
-            directionalLight.shadow.camera.bottom = -10;
+            directionalLight.shadow.mapSize.setScalar(2048);
+            directionalLight.shadow.camera.near = 0.5;
+            directionalLight.shadow.camera.far = 40;
+            directionalLight.shadow.camera.left = -8;
+            directionalLight.shadow.camera.right = 8;
+            directionalLight.shadow.camera.top = 8;
+            directionalLight.shadow.camera.bottom = -8;
+            directionalLight.shadow.bias = -0.0004;
+            directionalLight.shadow.normalBias = 0.02;
             scene.add(directionalLight);
 
-            // Single front light instead of multiple spots
-            const frontLight = new THREE.DirectionalLight(0xffffff, 0.5);
-            frontLight.position.set(0, 8, 8);
-            scene.add(frontLight);
+            // Cool fill from the rear to separate the car from the dark walls
+            const fillLight = new THREE.DirectionalLight(STUDIO.accent, 0.35);
+            fillLight.position.set(-6, 5, -6);
+            scene.add(fillLight);
 
-            // Ground
-            const groundGeometry = new THREE.PlaneGeometry(20, 20);
-            const groundMaterial = new THREE.MeshLambertMaterial({ 
-                color: 0x333333,
-                side: THREE.DoubleSide 
+            // Reflective studio floor (polished, mirror-like PBR)
+            const groundGeometry = new THREE.PlaneGeometry(40, 40);
+            const groundMaterial = new THREE.MeshStandardMaterial({
+                color: STUDIO.floor,
+                roughness: 0.12,
+                metalness: 0.85,
+                envMapIntensity: 0.55
             });
             const ground = new THREE.Mesh(groundGeometry, groundMaterial);
             ground.rotation.x = -Math.PI / 2;
             ground.receiveShadow = true;
             scene.add(ground);
 
-            // Showroom environment
+            // Showroom environment (walls, ceiling, detailing softboxes, turntable)
             createShowroom();
 
-            // Renderer - optimized settings
-            renderer = new THREE.WebGLRenderer({ 
-                // powerPreference: "high-performance"
-                // antialias: false, // Disabled for better performance
-            });
-            // renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Cap pixel ratio
+            // Renderer - cinematic settings for automotive paint
+            renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setPixelRatio(window.devicePixelRatio);
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setAnimationLoop(animate);
             renderer.xr.enabled = true;
-            // renderer.shadowMap.enabled = true;
-            // renderer.shadowMap.type = 
-            // renderer.toneMapping = THREE.ACESFilmicToneMapping;
-            // renderer.toneMappingExposure = 1;
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.outputColorSpace = THREE.SRGBColorSpace;
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.15;
 
             document.body.appendChild(renderer.domElement);
+
+            // Image-based lighting: a neutral studio room gives cars real reflections
+            const pmrem = new THREE.PMREMGenerator(renderer);
+            environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+            scene.environment = environment;
 
             // VR Button
             document.body.appendChild(VRButton.createButton(renderer));
@@ -223,31 +272,156 @@
         }
 
         function createShowroom() {
-            // Create a simple showroom environment
             const wallHeight = 6;
-            const wallWidth = 15;
+            const wallWidth = 16;
+            const roomDepth = 16;
 
-            // Back wall
-            const backWallGeometry = new THREE.PlaneGeometry(wallWidth, wallHeight);
-            const wallMaterial = new THREE.MeshLambertMaterial({ color: 0x444444 });
-            const backWall = new THREE.Mesh(backWallGeometry, wallMaterial);
-            backWall.position.set(0, wallHeight / 2, -7);
+            // Matte charcoal walls with a subtle top-to-bottom gradient feel
+            const wallMaterial = new THREE.MeshStandardMaterial({
+                color: STUDIO.wall,
+                roughness: 0.9,
+                metalness: 0.1,
+                side: THREE.DoubleSide
+            });
+
+            const backWall = new THREE.Mesh(new THREE.PlaneGeometry(wallWidth, wallHeight), wallMaterial);
+            backWall.position.set(0, wallHeight / 2, -8);
+            backWall.receiveShadow = true;
             scene.add(backWall);
 
-            // Side walls
-            const sideWallGeometry = new THREE.PlaneGeometry(14, wallHeight);
+            const frontWall = new THREE.Mesh(new THREE.PlaneGeometry(wallWidth, wallHeight), wallMaterial);
+            frontWall.position.set(0, wallHeight / 2, 8);
+            frontWall.rotation.y = Math.PI;
+            scene.add(frontWall);
+
+            const sideWallGeometry = new THREE.PlaneGeometry(roomDepth, wallHeight);
             const leftWall = new THREE.Mesh(sideWallGeometry, wallMaterial);
-            leftWall.position.set(-7.5, wallHeight / 2, 0);
+            leftWall.position.set(-8, wallHeight / 2, 0);
             leftWall.rotation.y = Math.PI / 2;
+            leftWall.receiveShadow = true;
             scene.add(leftWall);
 
             const rightWall = new THREE.Mesh(sideWallGeometry, wallMaterial);
-            rightWall.position.set(7.5, wallHeight / 2, 0);
+            rightWall.position.set(8, wallHeight / 2, 0);
             rightWall.rotation.y = -Math.PI / 2;
+            rightWall.receiveShadow = true;
             scene.add(rightWall);
 
-            // Create hexagonal ceiling lighting system
+            // Thin emissive accent trim where the walls meet the floor (garage glow line)
+            const trimMat = new THREE.MeshStandardMaterial({
+                color: STUDIO.accent, emissive: STUDIO.accent, emissiveIntensity: 1.6, toneMapped: true
+            });
+            const trimGeo = new THREE.BoxGeometry(wallWidth, 0.04, 0.04);
+            [[-8, 'z', Math.PI / 2, roomDepth], [8, 'z', Math.PI / 2, roomDepth]].forEach(() => {});
+            const backTrim = new THREE.Mesh(trimGeo, trimMat);
+            backTrim.position.set(0, 0.05, -7.98);
+            scene.add(backTrim);
+            const sideTrimGeo = new THREE.BoxGeometry(roomDepth, 0.04, 0.04);
+            const leftTrim = new THREE.Mesh(sideTrimGeo, trimMat);
+            leftTrim.position.set(-7.98, 0.05, 0); leftTrim.rotation.y = Math.PI / 2;
+            scene.add(leftTrim);
+            const rightTrim = new THREE.Mesh(sideTrimGeo, trimMat.clone());
+            rightTrim.position.set(7.98, 0.05, 0); rightTrim.rotation.y = Math.PI / 2;
+            scene.add(rightTrim);
+
+            // The rotating stage the car sits on
+            createTurntable();
+
+            // Detailing softbox rigs (the star of the show)
+            createDetailingLights();
+
+            // Refined ceiling light panels
             createHexagonalCeilingLights();
+        }
+
+        // Circular turntable platform with a glowing rim, centred under the car
+        function createTurntable() {
+            turntable = new THREE.Group();
+            turntable.position.set(0, 0, -3);
+            scene.add(turntable);
+
+            // Raised dark platform disc
+            const platMat = new THREE.MeshStandardMaterial({
+                color: 0x0c0e13, roughness: 0.25, metalness: 0.9, envMapIntensity: 0.7
+            });
+            const platform = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 2.8, 0.12, 64), platMat);
+            platform.position.y = 0.06;
+            platform.receiveShadow = true;
+            turntable.add(platform);
+
+            // Glowing accent ring around the platform edge
+            const ringMat = new THREE.MeshStandardMaterial({
+                color: STUDIO.accent, emissive: STUDIO.accent, emissiveIntensity: 2.0
+            });
+            const ring = new THREE.Mesh(new THREE.TorusGeometry(2.62, 0.03, 12, 80), ringMat);
+            ring.rotation.x = Math.PI / 2;
+            ring.position.y = 0.12;
+            turntable.add(ring);
+
+            // Soft inner disc so the car reads as sitting on a lit stage
+            const innerMat = new THREE.MeshStandardMaterial({
+                color: 0x11151b, roughness: 0.08, metalness: 1.0, envMapIntensity: 0.9
+            });
+            const inner = new THREE.Mesh(new THREE.CircleGeometry(2.5, 64), innerMat);
+            inner.rotation.x = -Math.PI / 2;
+            inner.position.y = 0.121;
+            inner.receiveShadow = true;
+            turntable.add(inner);
+        }
+
+        // Vertical + overhead detailing softboxes: emissive panels backed by RectAreaLights.
+        // A mesh's front (+Z) and a light's emission (-Z) orient oppositely under lookAt,
+        // so the panel and the light are aimed independently at the car.
+        function createDetailingLights() {
+            const target = new THREE.Vector3(0, 1.0, -3); // car centre on the stage
+            const softboxes = [
+                // [x, y, z, w, h, color, intensity]
+                [-4.2, 2.3, -3.0, 1.1, 3.4, 0xffffff,      6.0],
+                [ 4.2, 2.3, -3.0, 1.1, 3.4, 0xffffff,      6.0],
+                [-3.2, 2.5,  1.4, 0.9, 3.0, STUDIO.accent, 3.4],
+                [ 3.2, 2.5,  1.4, 0.9, 3.0, STUDIO.accent, 3.4],
+                [ 0.0, 4.6, -3.0, 3.2, 1.2, 0xffffff,      4.2]  // overhead
+            ];
+
+            softboxes.forEach(([x, y, z, w, h, color, intensity]) => {
+                // Physical light — emits along its local -Z, which lookAt aims at the target
+                const rect = new THREE.RectAreaLight(color, intensity, w, h);
+                rect.position.set(x, y, z);
+                rect.lookAt(target);
+                scene.add(rect);
+
+                // Visible softbox — a mesh's front (+Z) faces the target under lookAt
+                const rig = new THREE.Group();
+                rig.position.set(x, y, z);
+                scene.add(rig);
+                rig.lookAt(target);
+
+                const panel = new THREE.Mesh(
+                    new THREE.PlaneGeometry(w, h),
+                    new THREE.MeshStandardMaterial({
+                        color: color, emissive: color, emissiveIntensity: 2.6,
+                        roughness: 1, metalness: 0
+                    })
+                );
+                rig.add(panel);
+
+                const frame = new THREE.Mesh(
+                    new THREE.PlaneGeometry(w + 0.12, h + 0.12),
+                    new THREE.MeshStandardMaterial({ color: 0x23272f, roughness: 0.35, metalness: 0.85 })
+                );
+                frame.position.z = -0.02;
+                rig.add(frame);
+
+                // Thin stand pole to the floor for the tall side rigs
+                if (h > 2.5) {
+                    const pole = new THREE.Mesh(
+                        new THREE.CylinderGeometry(0.03, 0.03, y, 10),
+                        new THREE.MeshStandardMaterial({ color: 0x3a3f48, roughness: 0.5, metalness: 0.7 })
+                    );
+                    pole.position.set(0, -y / 2 - h / 2 + 0.1, -0.06);
+                    rig.add(pole);
+                }
+            });
         }
 
         function setupVRControllers() {
@@ -280,10 +454,10 @@
             ]);
             
             // Create visible ray line
-            const rayMaterial = new THREE.LineBasicMaterial({ 
-                color: 0x00ff00, 
-                transparent: true, 
-                opacity: 0.6 
+            const rayMaterial = new THREE.LineBasicMaterial({
+                color: STUDIO.accent,
+                transparent: true,
+                opacity: 0.6
             });
             const rayLine1 = new THREE.Line(rayGeometry, rayMaterial);
             const rayLine2 = new THREE.Line(rayGeometry, rayMaterial.clone());
@@ -292,10 +466,10 @@
             controller2.add(rayLine2);
             
             // Add targeting reticle at the end of the ray
-            const reticleGeometry = new THREE.RingGeometry(0.02, 0.04, 8);
-            const reticleMaterial = new THREE.MeshBasicMaterial({ 
-                color: 0x00ff00, 
-                transparent: true, 
+            const reticleGeometry = new THREE.RingGeometry(0.02, 0.04, 24);
+            const reticleMaterial = new THREE.MeshBasicMaterial({
+                color: STUDIO.accent,
+                transparent: true,
                 opacity: 0.8,
                 side: THREE.DoubleSide
             });
@@ -321,31 +495,28 @@
             uiGroup.position.set(-2, 2.4, -5); // Moved closer and higher for better VR access
             scene.add(uiGroup);
 
+            // Studio header title
+            createHeaderPanel();
+
             // Car name display with glass-like appearance
             const canvas = document.createElement('canvas');
             canvas.width = 512;
             canvas.height = 128;
             const context = canvas.getContext('2d');
-            
-            // Create glass-like background with rounded corners
-            createGlassBackground(context, 512, 128, 20, 'rgba(0, 20, 40, 0.5)');
-            
-            context.fillStyle = '#ffffff';
-            context.font = 'Bold 32px Arial';
-            context.textAlign = 'center';
-            context.fillText('Loading...', 256, 64);
+
+            drawCarName(context, 'Loading…');
 
             const carNameTexture = new THREE.CanvasTexture(canvas);
-            const carNameMaterial = new THREE.MeshBasicMaterial({ 
+            const carNameMaterial = new THREE.MeshBasicMaterial({
                 map: carNameTexture,
                 transparent: true,
-                opacity: 0.7,
+                opacity: 0.96,
                 alphaTest: 0.01,
                 side: THREE.DoubleSide
             });
-            const carNameGeometry = new THREE.PlaneGeometry(1, 0.25);
+            const carNameGeometry = new THREE.PlaneGeometry(1.4, 0.35);
             carNameText = new THREE.Mesh(carNameGeometry, carNameMaterial);
-            carNameText.position.set(0, -0.5, 0);
+            carNameText.position.set(0.2, -0.55, 0);
             uiGroup.add(carNameText);
 
             // Switch car button
@@ -376,26 +547,14 @@
             canvas.width = 256;
             canvas.height = 64;
             const context = canvas.getContext('2d');
-            
-            // Create glass-like button with rounded corners
-            createGlassBackground(context, 256, 64, 15, 'rgba(255, 102, 0, 0.4)');
-            
-            // Add subtle border
-            context.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-            context.lineWidth = 1;
-            roundRect(context, 1, 1, 254, 62, 15);
-            context.stroke();
-            
-            context.fillStyle = '#ffffff';
-            context.font = 'Bold 18px Arial';
-            context.textAlign = 'center';
-            context.fillText(text, 128, 36);
+
+            drawButtonFace(context, text);
 
             const texture = new THREE.CanvasTexture(canvas);
-            const material = new THREE.MeshBasicMaterial({ 
+            const material = new THREE.MeshBasicMaterial({
                 map: texture,
                 transparent: true,
-                opacity: 0.7,
+                opacity: 0.95,
                 alphaTest: 0.01,
                 side: THREE.DoubleSide
             });
@@ -408,44 +567,84 @@
             return button;
         }
 
+        // Small branded header above the control stack
+        function createHeaderPanel() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512; canvas.height = 96;
+            const ctx = canvas.getContext('2d');
+            createGlassBackground(ctx, 512, 96, 16, 'rgba(20,24,32,0.82)');
+
+            ctx.textAlign = 'left';
+            ctx.fillStyle = '#eef1f6';
+            ctx.font = '700 34px "Space Grotesk", Arial, sans-serif';
+            ctx.fillText('APEX', 28, 58);
+            ctx.fillStyle = 'rgba(82, 224, 255, 0.95)';
+            ctx.fillText('·', 118, 58);
+            ctx.fillStyle = '#8b93a3';
+            ctx.font = '600 20px "Space Grotesk", Arial, sans-serif';
+            ctx.fillText('DETAILING STUDIO', 138, 56);
+
+            const tex = new THREE.CanvasTexture(canvas);
+            const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0.96, alphaTest: 0.01, side: THREE.DoubleSide });
+            const header = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.28), mat);
+            header.position.set(0.25, -0.15, 0);
+            uiGroup.add(header);
+        }
+
+        // Shared premium button face used on create + text updates
+        function drawButtonFace(context, text) {
+            createGlassBackground(context, 256, 64, 14, 'rgba(20,24,32,0.82)');
+
+            // Accent indicator dot on the left
+            context.fillStyle = 'rgba(82, 224, 255, 0.95)';
+            context.beginPath();
+            context.arc(26, 32, 4, 0, Math.PI * 2);
+            context.fill();
+            context.shadowColor = 'rgba(82, 224, 255, 0.8)';
+            context.shadowBlur = 8;
+            context.fill();
+            context.shadowBlur = 0;
+
+            context.fillStyle = '#eef1f6';
+            context.font = '600 19px "Space Grotesk", Arial, sans-serif';
+            context.textAlign = 'center';
+            context.textBaseline = 'middle';
+            context.fillText(text, 136, 33);
+            context.textBaseline = 'alphabetic';
+        }
+
         function updateButtonText(button, newText) {
             const userData = button.userData;
-            
-            // Clear canvas with transparent background
             userData.context.clearRect(0, 0, 256, 64);
-            
-            // Recreate glass-like background
-            createGlassBackground(userData.context, 256, 64, 15, 'rgba(255, 102, 0, 0.4)');
-            
-            // Add subtle border
-            userData.context.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-            userData.context.lineWidth = 1;
-            roundRect(userData.context, 1, 1, 254, 62, 15);
-            userData.context.stroke();
-            
-            userData.context.fillStyle = '#ffffff';
-            userData.context.font = 'Bold 18px Arial';
-            userData.context.textAlign = 'center';
-            userData.context.fillText(newText, 128, 36);
+            drawButtonFace(userData.context, newText);
             userData.texture.needsUpdate = true;
+        }
+
+        // Premium "now showing" name plate
+        function drawCarName(context, carName) {
+            context.clearRect(0, 0, 512, 128);
+            createGlassBackground(context, 512, 128, 18, 'rgba(0,20,40,0.5)');
+
+            context.textAlign = 'center';
+            context.fillStyle = 'rgba(82, 224, 255, 0.9)';
+            context.font = '600 15px "Space Grotesk", Arial, sans-serif';
+            context.fillText('N O W   S H O W I N G', 256, 42);
+
+            context.fillStyle = '#ffffff';
+            // Scale font down for long names so they always fit
+            let size = 34;
+            context.font = `600 ${size}px "Space Grotesk", Arial, sans-serif`;
+            while (context.measureText(carName).width > 470 && size > 16) {
+                size -= 2;
+                context.font = `600 ${size}px "Space Grotesk", Arial, sans-serif`;
+            }
+            context.fillText(carName, 256, 84);
         }
 
         function updateCarNameDisplay(carName) {
             if (!carNameText) return;
-            
             const canvas = carNameText.material.map.image;
-            const context = canvas.getContext('2d');
-            
-            // Clear canvas with transparent background
-            context.clearRect(0, 0, 512, 128);
-            
-            // Create glass-like background with rounded corners
-            createGlassBackground(context, 512, 128, 20, 'rgba(0, 20, 40, 0.5)');
-            
-            context.fillStyle = '#ffffff';
-            context.font = 'Bold 24px Arial';
-            context.textAlign = 'center';
-            context.fillText(carName, 256, 64);
+            drawCarName(canvas.getContext('2d'), carName);
             carNameText.material.map.needsUpdate = true;
         }
 
@@ -497,10 +696,12 @@
 
                 // Create slider handle with glass effect - make it more visible
                 const handleGeometry = new THREE.BoxGeometry(0.15, sliderHeight * 2, 0.1); // Bigger handle
-                const handleMaterial = new THREE.MeshBasicMaterial({ 
-                    color: 0xff6600,
+                const handleMaterial = new THREE.MeshStandardMaterial({
+                    color: STUDIO.accent,
+                    emissive: STUDIO.accent,
+                    emissiveIntensity: 1.4,
                     transparent: true,
-                    opacity: 0.9
+                    opacity: 0.95
                 });
                 const handle = new THREE.Mesh(handleGeometry, handleMaterial);
                 
@@ -643,7 +844,7 @@
                             name: generateCarName(filename),
                             path: `./models/${filename}`,
                             scale: 1.0,
-                            position: { x: 0, y: 0, z: -3 },
+                            position: { x: 0, y: 0.13, z: -3 }, // sit on top of the turntable stage
                             rotation: { x: 0, y: 0, z: 0 }
                         };
                         carData.push(carInfo);
@@ -711,8 +912,8 @@
                         
                         console.log(`Model ${carInfo.name} - Original size:`, size);
                         
-                        // Calculate scale to make all cars roughly the same size (target: 2 units long)
-                        const targetSize = 2.0;
+                        // Calculate scale to make all cars roughly the same size (hero scale on the stage)
+                        const targetSize = 2.7;
                         const maxDimension = Math.max(size.x, size.z); // Use X or Z, whichever is bigger
                         const autoScale = targetSize / maxDimension;
                         
@@ -734,12 +935,18 @@
                         
                         console.log(`Model ${carInfo.name} - Auto scale: ${autoScale}, Final position:`, model.position);
                         
-                        // Enable shadows for all meshes without modifying materials
+                        // Enable shadows and feed the studio reflections into the paint
                         model.traverse((child) => {
                             if (child.isMesh) {
-                                console.log('Found mesh:', child.name, 'Material:', child.material);
                                 child.castShadow = true;
                                 child.receiveShadow = true;
+                                const mats = Array.isArray(child.material) ? child.material : [child.material];
+                                mats.forEach((mat) => {
+                                    if (mat && 'envMapIntensity' in mat) {
+                                        mat.envMapIntensity = carEnvIntensity;
+                                        mat.needsUpdate = true;
+                                    }
+                                });
                             }
                         });
 
@@ -895,11 +1102,11 @@
 
         // Create movement indicator
         function createMovementIndicator() {
-            const geometry = new THREE.RingGeometry(0.1, 0.15, 8);
-            const material = new THREE.MeshBasicMaterial({ 
-                color: 0x00ff00, 
-                transparent: true, 
-                opacity: 0.7 
+            const geometry = new THREE.RingGeometry(0.1, 0.15, 24);
+            const material = new THREE.MeshBasicMaterial({
+                color: STUDIO.accent,
+                transparent: true,
+                opacity: 0.7
             });
             movementIndicator = new THREE.Mesh(geometry, material);
             movementIndicator.position.set(0, 0.1, -0.5);
@@ -1094,12 +1301,12 @@
                 const distance = intersection.distance;
                 
                 // Update ray color to indicate targeting
-                rayLine.material.color.setHex(0xff6600); // Orange when targeting
-                rayLine.material.opacity = 0.8;
-                
+                rayLine.material.color.setHex(STUDIO.amber); // Warm accent when targeting
+                rayLine.material.opacity = 0.9;
+
                 // Position reticle at intersection point
                 reticle.position.z = -distance;
-                reticle.material.color.setHex(0xff6600); // Orange when targeting
+                reticle.material.color.setHex(STUDIO.amber); // Warm accent when targeting
                 reticle.material.opacity = 1.0;
                 reticle.scale.setScalar(2); // Make reticle bigger when targeting
                 
@@ -1111,11 +1318,11 @@
                 
             } else {
                 // Nothing being targeted - return to default
-                rayLine.material.color.setHex(0x00ff00); // Green default
+                rayLine.material.color.setHex(STUDIO.accent); // Cyan default
                 rayLine.material.opacity = 0.4;
-                
+
                 reticle.position.z = -3; // Default position
-                reticle.material.color.setHex(0x00ff00); // Green default
+                reticle.material.color.setHex(STUDIO.accent); // Cyan default
                 reticle.material.opacity = 0.6;
                 reticle.scale.setScalar(1); // Normal size
                 
@@ -1382,55 +1589,45 @@
             ctx.closePath();
         }
 
-        function createGlassBackground(context, width, height, borderRadius, backgroundColor) {
-            // Clear the canvas to transparent
+        // Premium dark-glass panel. `accentColor` (optional) tints the edge glow.
+        function createGlassBackground(context, width, height, borderRadius, backgroundColor, accentColor) {
             context.clearRect(0, 0, width, height);
-            
-            // Parse the base color to extract RGB values
-            const match = backgroundColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+),?\s*([\d.]*)\)/);
-            let baseR = 0, baseG = 20, baseB = 40, baseA = 0.5;
-            
-            if (match) {
-                baseR = parseInt(match[1]);
-                baseG = parseInt(match[2]);
-                baseB = parseInt(match[3]);
-                baseA = parseFloat(match[4]) || 0.5;
-            }
-            
-            // Create main transparent glass background with rounded corners
+
+            const accent = accentColor || 'rgba(82, 224, 255, 0.9)';
+
+            // Deep smoked-glass base with a soft vertical gradient
             const gradient = context.createLinearGradient(0, 0, 0, height);
-            gradient.addColorStop(0, `rgba(${Math.min(255, baseR + 40)}, ${Math.min(255, baseG + 40)}, ${Math.min(255, baseB + 40)}, ${baseA * 0.6})`);
-            gradient.addColorStop(0.5, `rgba(${baseR}, ${baseG}, ${baseB}, ${baseA * 0.4})`);
-            gradient.addColorStop(1, `rgba(${Math.max(0, baseR - 30)}, ${Math.max(0, baseG - 30)}, ${Math.max(0, baseB - 30)}, ${baseA * 0.7})`);
-            
+            gradient.addColorStop(0, 'rgba(20, 24, 32, 0.82)');
+            gradient.addColorStop(1, 'rgba(9, 11, 15, 0.9)');
             context.fillStyle = gradient;
             roundRect(context, 0, 0, width, height, borderRadius);
             context.fill();
-            
-            // Add glass highlight effect (top portion)
-            const highlightGradient = context.createLinearGradient(0, 0, 0, height * 0.4);
-            highlightGradient.addColorStop(0, 'rgba(255, 255, 255, 0.2)');
-            highlightGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
-            
-            context.fillStyle = highlightGradient;
-            roundRect(context, 0, 0, width, height * 0.4, borderRadius);
+
+            // Subtle top sheen
+            const sheen = context.createLinearGradient(0, 0, 0, height * 0.5);
+            sheen.addColorStop(0, 'rgba(255, 255, 255, 0.10)');
+            sheen.addColorStop(1, 'rgba(255, 255, 255, 0)');
+            context.fillStyle = sheen;
+            roundRect(context, 0, 0, width, height * 0.5, borderRadius);
             context.fill();
-            
-            // Add subtle border for definition
-            context.strokeStyle = `rgba(255, 255, 255, 0.15)`;
-            context.lineWidth = 1;
-            roundRect(context, 0.5, 0.5, width - 1, height - 1, borderRadius);
+
+            // Crisp hairline border
+            context.strokeStyle = 'rgba(255, 255, 255, 0.14)';
+            context.lineWidth = 1.5;
+            roundRect(context, 1, 1, width - 2, height - 2, borderRadius);
             context.stroke();
-            
-            // Add inner shadow for depth
-            context.strokeStyle = `rgba(0, 0, 0, 0.1)`;
-            context.lineWidth = 0.5;
-            roundRect(context, 1, 1, width - 2, height - 2, borderRadius - 1);
+
+            // Accent glow line along the bottom edge
+            context.strokeStyle = accent;
+            context.lineWidth = 2;
+            context.beginPath();
+            context.moveTo(borderRadius + 4, height - 2);
+            context.lineTo(width - borderRadius - 4, height - 2);
             context.stroke();
         }
 
         function createHexagonalCeilingLights() {
-            const ceilingHeight = 3; // Height of the ceiling
+            const ceilingHeight = 3.6; // Height of the ceiling
             const ceilingGroup = new THREE.Group();
             ceilingGroup.position.y = ceilingHeight;
             ceilingGroup.position.z -= 2.4; // Center the ceiling group
@@ -1525,8 +1722,8 @@
                 }
             }
 
-            // Add single point light per panel for illumination
-            const pointLight = new THREE.PointLight(0xffffff, 1.8, 7);
+            // Add single soft point light per panel for gentle overhead fill
+            const pointLight = new THREE.PointLight(0xcfe4ff, 0.6, 9, 2);
             pointLight.position.set(0, -0.5, 0);
             panelGroup.add(pointLight);
         }
@@ -1535,13 +1732,14 @@
             // Create a bright LED hexagon like in the reference
             const geometry = new THREE.CylinderGeometry(size, size, 0.03, 6);
             
-            const material = new THREE.MeshPhongMaterial({
-                color: 0xffffff,
-                emissive: 0x666666,
-                emissiveIntensity: 0.6,
+            const material = new THREE.MeshStandardMaterial({
+                color: 0x9fb6c6,
+                emissive: 0xaad4ec,
+                emissiveIntensity: 0.42,
+                roughness: 0.7,
+                metalness: 0.0,
                 transparent: true,
-                opacity: 0.95,
-                shininess: 50
+                opacity: 0.92
             });
 
             const hexMesh = new THREE.Mesh(geometry, material);
