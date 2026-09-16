@@ -6,13 +6,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚗</text></svg>">
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500&display=swap" rel="stylesheet">
     <style>
         body {
             margin: 0;
             background-color: #07080b;
             color: #eef1f6;
-            font-family: 'Inter', system-ui, sans-serif;
+            font-family: 'IBM Plex Sans', system-ui, sans-serif;
             font-size: 13px;
             overscroll-behavior: none;
         }
@@ -39,7 +39,7 @@
             overflow: hidden;
             text-overflow: ellipsis;
         }
-        #info b { color: #eef1f6; font-family: 'Space Grotesk', sans-serif; font-weight: 600; }
+        #info b { color: #eef1f6; font-family: 'IBM Plex Sans Condensed', sans-serif; font-weight: 600; }
         #info .accent { color: #ff9d4d; }
 
         .loading {
@@ -47,7 +47,7 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            font-family: 'Space Grotesk', sans-serif;
+            font-family: 'IBM Plex Sans Condensed', sans-serif;
             font-size: 15px;
             letter-spacing: 0.04em;
             color: #cdd4df;
@@ -79,7 +79,7 @@
             color: #eef1f6;
             border: 1px solid rgba(82, 224, 255, 0.5);
             border-radius: 12px;
-            font-family: 'Space Grotesk', sans-serif;
+            font-family: 'IBM Plex Sans Condensed', sans-serif;
             font-size: 15px;
             font-weight: 600;
             letter-spacing: 0.02em;
@@ -134,6 +134,11 @@
 
         const STUDIO = { accent: 0x52e0ff, amber: 0xff9d4d };
         let carEnvIntensity = 1.1;
+
+        // In-headset UI constants (declared before init() so hoisted UI helpers can use them)
+        const UI_PPU = 640;
+        const uiRedraws = [];
+        let currentCarName = 'Loading…';
 
         let camera, scene, renderer, environment;
         let currentCarIndex = 0;
@@ -515,100 +520,144 @@
             controller2.add(mesh.clone());
         }
 
+        // ── In-headset UI: crisp canvas panels that match the DOM pill ──
+        function panelCanvas(wUnits, hUnits) {
+            const c = document.createElement('canvas');
+            c.width = Math.max(2, Math.round(wUnits * UI_PPU));
+            c.height = Math.max(2, Math.round(hUnits * UI_PPU));
+            return c;
+        }
+        function drawPanel(ctx, radius) {
+            const W = ctx.canvas.width, H = ctx.canvas.height;
+            ctx.clearRect(0, 0, W, H);
+            roundRect(ctx, 1, 1, W - 2, H - 2, radius); ctx.fillStyle = 'rgba(15, 19, 25, 0.92)'; ctx.fill();
+            const sheen = ctx.createLinearGradient(0, 0, 0, H * 0.55);
+            sheen.addColorStop(0, 'rgba(255,255,255,0.05)'); sheen.addColorStop(1, 'rgba(255,255,255,0)');
+            ctx.fillStyle = sheen; roundRect(ctx, 1, 1, W - 2, H * 0.55, radius); ctx.fill();
+            const lw = Math.max(2, H * 0.02);
+            ctx.lineWidth = lw; ctx.strokeStyle = 'rgba(233,235,240,0.13)';
+            roundRect(ctx, lw / 2, lw / 2, W - lw, H - lw, radius); ctx.stroke();
+        }
+        function meshFromCanvas(canvas, wUnits, hUnits, opacity = 0.98) {
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.anisotropy = 8; tex.colorSpace = THREE.SRGBColorSpace;
+            const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity, alphaTest: 0.01, side: THREE.DoubleSide, depthWrite: false });
+            return new THREE.Mesh(new THREE.PlaneGeometry(wUnits, hUnits), mat);
+        }
+        function cyanDiamond(ctx, cx, cy, s) {
+            ctx.save(); ctx.translate(cx, cy); ctx.rotate(Math.PI / 4);
+            ctx.fillStyle = '#57d1e6'; ctx.fillRect(-s, -s, 2 * s, 2 * s); ctx.restore();
+        }
+        function makeBoard(wUnits, hUnits) {
+            const c = panelCanvas(wUnits, hUnits), ctx = c.getContext('2d');
+            const W = c.width, H = c.height, r = H * 0.05;
+            roundRect(ctx, 1, 1, W - 2, H - 2, r); ctx.fillStyle = 'rgba(11, 13, 17, 0.72)'; ctx.fill();
+            ctx.lineWidth = Math.max(2, H * 0.006); ctx.strokeStyle = 'rgba(233,235,240,0.10)';
+            roundRect(ctx, 1, 1, W - 2, H - 2, r); ctx.stroke();
+            return meshFromCanvas(c, wUnits, hUnits, 0.86);
+        }
+
         function setupVRUI() {
             uiGroup = new THREE.Group();
-            uiGroup.position.set(-1, 3, -2); // Positioned for AR interaction
+            uiGroup.position.set(-1.15, 1.78, -1.9);
             scene.add(uiGroup);
 
-            // Car name display
-            const canvas = document.createElement('canvas');
-            canvas.width = 512;
-            canvas.height = 128;
-            const context = canvas.getContext('2d');
-            
-            drawCarName(context, 'Loading…');
+            const board = makeBoard(1.52, 2.12);
+            board.position.set(0, -1.02, -0.02);
+            uiGroup.add(board);
 
-            const carNameTexture = new THREE.CanvasTexture(canvas);
-            const carNameMaterial = new THREE.MeshBasicMaterial({ 
-                map: carNameTexture,
-                transparent: true,
-                opacity: 0.9, // More opaque for AR
-                alphaTest: 0.01,
-                side: THREE.DoubleSide
-            });
-            const carNameGeometry = new THREE.PlaneGeometry(1, 0.25);
-            carNameText = new THREE.Mesh(carNameGeometry, carNameMaterial);
-            carNameText.position.set(0, -0.3, 0);
+            createHeaderPanel();
+
+            const nameCanvas = panelCanvas(1.46, 0.4);
+            drawCarName(nameCanvas.getContext('2d'), 'Loading…');
+            carNameText = meshFromCanvas(nameCanvas, 1.46, 0.4);
+            carNameText.position.set(0, -0.52, 0);
             uiGroup.add(carNameText);
 
-            // Control buttons
-            createButton('Switch Car', 0, -0.6, 0, switchCar);
-            createButton('Auto Rotate: OFF', 0, -0.9, 0, toggleRotation);
-            createButton('Rotate Left', -0.6, -1.2, 0, rotateCarLeft, 0.6, 0.18);
-            createButton('Rotate Right', 0.6, -1.2, 0, rotateCarRight, 0.6, 0.18);
-            createButton('Scale Up', 0, -1.5, 0, scaleUp);
-            createButton('Scale Down', 0, -1.8, 0, scaleDown);
-            createButton('Play Engine Sound', 0, -2.1, 0, playCarStartup);
+            const bw = 0.68, bh = 0.19, colX = 0.36;
+            const rows = [
+                [['Switch Car', switchCar], ['Auto Rotate: OFF', toggleRotation]],
+                [['Rotate ←', rotateCarLeft], ['Rotate →', rotateCarRight]],
+                [['Scale −', scaleDown], ['Scale +', scaleUp]],
+            ];
+            rows.forEach((row, r) => {
+                const y = -0.88 - r * 0.26;
+                createButton(row[0][0], -colX, y, 0, row[0][1], bw, bh);
+                createButton(row[1][0],  colX, y, 0, row[1][1], bw, bh);
+            });
+            createButton('Engine Sound', 0, -1.66, 0, playCarStartup, 1.42, 0.19);
 
-            // Add instruction text for GUI toggle
             createInstructionText();
-
-            // Create sliders panel for car positioning
             createSliders();
         }
 
+        function createHeaderPanel() {
+            const canvas = panelCanvas(1.46, 0.24);
+            const ctx = canvas.getContext('2d');
+            const paint = () => {
+                const H = canvas.height;
+                drawPanel(ctx, H / 2);
+                cyanDiamond(ctx, H * 0.62, H * 0.5, H * 0.11);
+                ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+                ctx.fillStyle = '#eef1f6';
+                ctx.font = `700 ${Math.round(H * 0.42)}px "IBM Plex Sans Condensed", Arial, sans-serif`;
+                ctx.fillText('APEX', H * 0.98, H * 0.55);
+                const apexW = ctx.measureText('APEX').width;
+                ctx.fillStyle = '#8b93a3';
+                ctx.font = `600 ${Math.round(H * 0.26)}px "IBM Plex Sans Condensed", Arial, sans-serif`;
+                ctx.fillText('PASSTHROUGH AR', H * 0.98 + apexW + H * 0.3, H * 0.56);
+                ctx.textBaseline = 'alphabetic';
+            };
+            paint();
+            const header = meshFromCanvas(canvas, 1.46, 0.24);
+            header.position.set(0, -0.18, 0);
+            uiGroup.add(header);
+            uiRedraws.push(() => { paint(); header.material.map.needsUpdate = true; });
+        }
+
         function createButton(text, x, y, z, callback, width = 0.8, height = 0.2) {
-            const canvas = document.createElement('canvas');
-            canvas.width = 256;
-            canvas.height = 64;
+            const canvas = panelCanvas(width, height);
             const context = canvas.getContext('2d');
-            
             drawButtonFace(context, text);
-
-            const texture = new THREE.CanvasTexture(canvas);
-            const material = new THREE.MeshBasicMaterial({ 
-                map: texture,
-                transparent: true,
-                opacity: 0.9, // More opaque for AR
-                alphaTest: 0.01,
-                side: THREE.DoubleSide
-            });
-            const geometry = new THREE.PlaneGeometry(width, height);
-            const button = new THREE.Mesh(geometry, material);
+            const button = meshFromCanvas(canvas, width, height, 0.98);
             button.position.set(x, y, z);
-            button.userData = { callback: callback, text: text, canvas: canvas, context: context, texture: texture };
+            button.userData = { callback, text, canvas, context, texture: button.material.map };
             uiGroup.add(button);
-
             return button;
         }
 
         function createInstructionText() {
-            const canvas = document.createElement('canvas');
-            canvas.width = 512;
-            canvas.height = 64;
-            const context = canvas.getContext('2d');
-            
-            createGlassBackground(context, 512, 64, 14, 'rgba(20,24,32,0.86)');
-
-            context.fillStyle = '#b9c0cc';
-            context.font = '500 15px "Space Grotesk", Arial, sans-serif';
-            context.textAlign = 'center';
-            context.textBaseline = 'middle';
-            context.fillText('Left controller button · hide / show controls', 256, 33);
-            context.textBaseline = 'alphabetic';
-
-            const texture = new THREE.CanvasTexture(canvas);
-            const material = new THREE.MeshBasicMaterial({ 
-                map: texture,
-                transparent: true,
-                opacity: 0.8,
-                alphaTest: 0.01,
-                side: THREE.DoubleSide
-            });
-            const geometry = new THREE.PlaneGeometry(1.5, 0.2);
-            const instructionText = new THREE.Mesh(geometry, material);
-            instructionText.position.set(0, -2.5, 0);
+            const canvas = panelCanvas(1.46, 0.17);
+            const ctx = canvas.getContext('2d');
+            const paint = () => {
+                const W = canvas.width, H = canvas.height;
+                drawPanel(ctx, H / 2);
+                ctx.fillStyle = '#8b93a3';
+                ctx.font = `500 ${Math.round(H * 0.34)}px "IBM Plex Sans Condensed", Arial, sans-serif`;
+                ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.fillText('Left controller button · hide / show controls', W / 2, H * 0.54);
+                ctx.textBaseline = 'alphabetic';
+            };
+            paint();
+            const instructionText = meshFromCanvas(canvas, 1.46, 0.17, 0.94);
+            instructionText.position.set(0, -1.92, 0);
             uiGroup.add(instructionText);
+            uiRedraws.push(() => { paint(); instructionText.material.map.needsUpdate = true; });
+        }
+
+        // Repaint every text panel once the web font is really available
+        function refreshUIText() {
+            uiRedraws.forEach((fn) => { try { fn(); } catch (e) {} });
+            if (uiGroup) uiGroup.children.forEach((ch) => {
+                if (ch.userData && ch.userData.callback && ch.userData.context) {
+                    drawButtonFace(ch.userData.context, ch.userData.text);
+                    ch.userData.texture.needsUpdate = true;
+                }
+            });
+            updateCarNameDisplay(currentCarName);
+            scene.traverse((ch) => {
+                if (ch.userData && ch.userData.isSlider) updateSliderLabel(ch, carControls[ch.userData.property]);
+            });
         }
 
         function onSelectStartUI(event) {
@@ -836,183 +885,141 @@
 
         // Shared premium button face
         function drawButtonFace(context, text) {
-            createGlassBackground(context, 256, 64, 14, 'rgba(20,24,32,0.86)');
-
-            context.fillStyle = 'rgba(82, 224, 255, 0.95)';
-            context.beginPath();
-            context.arc(26, 32, 4, 0, Math.PI * 2);
-            context.fill();
-            context.shadowColor = 'rgba(82, 224, 255, 0.8)';
-            context.shadowBlur = 8;
-            context.fill();
-            context.shadowBlur = 0;
-
+            const W = context.canvas.width, H = context.canvas.height;
+            drawPanel(context, H / 2);
+            cyanDiamond(context, H * 0.52, H * 0.5, H * 0.1);
             context.fillStyle = '#eef1f6';
-            context.font = '600 19px "Space Grotesk", Arial, sans-serif';
-            context.textAlign = 'center';
-            context.textBaseline = 'middle';
-            context.fillText(text, 136, 33);
+            context.textAlign = 'center'; context.textBaseline = 'middle';
+            let size = Math.round(H * 0.34);
+            const pad = H * 1.0;
+            context.font = `600 ${size}px "IBM Plex Sans Condensed", Arial, sans-serif`;
+            while (context.measureText(text).width > W - pad && size > 10) {
+                size -= 2; context.font = `600 ${size}px "IBM Plex Sans Condensed", Arial, sans-serif`;
+            }
+            context.fillText(text, (W + H * 0.7) / 2, H * 0.54);
             context.textBaseline = 'alphabetic';
         }
 
         function updateButtonText(button, newText) {
-            const userData = button.userData;
-            userData.context.clearRect(0, 0, 256, 64);
-            drawButtonFace(userData.context, newText);
-            userData.texture.needsUpdate = true;
+            button.userData.text = newText;
+            drawButtonFace(button.userData.context, newText);
+            button.userData.texture.needsUpdate = true;
         }
 
         function drawCarName(context, carName) {
-            context.clearRect(0, 0, 512, 128);
-            createGlassBackground(context, 512, 128, 18, 'rgba(0,20,40,0.8)');
-
+            const W = context.canvas.width, H = context.canvas.height;
+            drawPanel(context, H * 0.16);
             context.textAlign = 'center';
-            context.fillStyle = 'rgba(82, 224, 255, 0.9)';
-            context.font = '600 15px "Space Grotesk", Arial, sans-serif';
-            context.fillText('N O W   S H O W I N G', 256, 42);
-
+            context.fillStyle = 'rgba(87,209,230,0.95)';
+            context.font = `600 ${Math.round(H * 0.135)}px "IBM Plex Sans Condensed", Arial, sans-serif`;
+            context.fillText('N O W   S H O W I N G', W / 2, H * 0.3);
             context.fillStyle = '#ffffff';
-            let size = 34;
-            context.font = `600 ${size}px "Space Grotesk", Arial, sans-serif`;
-            while (context.measureText(carName).width > 470 && size > 16) {
-                size -= 2;
-                context.font = `600 ${size}px "Space Grotesk", Arial, sans-serif`;
+            let size = Math.round(H * 0.3);
+            context.font = `700 ${size}px "IBM Plex Sans Condensed", Arial, sans-serif`;
+            while (context.measureText(carName).width > W * 0.9 && size > 12) {
+                size -= 2; context.font = `700 ${size}px "IBM Plex Sans Condensed", Arial, sans-serif`;
             }
-            context.fillText(carName, 256, 84);
+            context.fillText(carName, W / 2, H * 0.66);
         }
 
         function updateCarNameDisplay(carName) {
+            currentCarName = carName;
             if (!carNameText) return;
-            const canvas = carNameText.material.map.image;
-            drawCarName(canvas.getContext('2d'), carName);
+            drawCarName(carNameText.material.map.image.getContext('2d'), carName);
             carNameText.material.map.needsUpdate = true;
         }
 
         // Slider functions
         function createSliders() {
-            // Create a separate UI group for sliders positioned to the right
             slidersGroup = new THREE.Group();
-            slidersGroup.position.set(2, 2, -2); // Positioned to the right for AR
+            slidersGroup.position.set(1.15, 1.78, -1.9);
             scene.add(slidersGroup);
 
-            // Slider parameters
-            const sliderWidth = 1.5; // Smaller for AR
-            const sliderHeight = 0.08;
-            const sliderSpacing = 0.25;
+            const board = makeBoard(1.5, 1.9);
+            board.position.set(-0.2, -0.92, -0.02);
+            slidersGroup.add(board);
 
-            // Create sliders for different controls
+            const titleCanvas = panelCanvas(1.3, 0.24);
+            const tctx = titleCanvas.getContext('2d');
+            const paintTitle = () => {
+                const H = titleCanvas.height;
+                drawPanel(tctx, H / 2);
+                cyanDiamond(tctx, H * 0.6, H * 0.5, H * 0.11);
+                tctx.fillStyle = '#eef1f6'; tctx.textBaseline = 'middle'; tctx.textAlign = 'left';
+                tctx.font = `600 ${Math.round(H * 0.4)}px "IBM Plex Sans Condensed", Arial, sans-serif`;
+                tctx.fillText('ADJUST', H * 0.95, H * 0.56);
+                tctx.textBaseline = 'alphabetic';
+            };
+            paintTitle();
+            const title = meshFromCanvas(titleCanvas, 1.3, 0.24);
+            title.position.set(-0.2, -0.16, 0);
+            slidersGroup.add(title);
+            uiRedraws.push(() => { paintTitle(); title.material.map.needsUpdate = true; });
+
+            const sliderWidth = 0.9;
+            const sliderHeight = 0.05;
+            const sliderSpacing = 0.3;
             const sliders = [
                 { name: 'Scale', min: 0.1, max: 10.0, value: carControls.scale, property: 'scale' },
-                { name: 'Position X', min: -3, max: 3, value: carControls.positionX, property: 'positionX' },
-                { name: 'Position Y', min: -1, max: 2, value: carControls.positionY, property: 'positionY' },
-                { name: 'Position Z', min: -3, max: 1, value: carControls.positionZ, property: 'positionZ' },
-                { name: 'Rotation Y', min: -Math.PI, max: Math.PI, value: carControls.rotationY, property: 'rotationY' }
+                { name: 'Pos X', min: -3, max: 3, value: carControls.positionX, property: 'positionX' },
+                { name: 'Pos Y', min: -1, max: 2, value: carControls.positionY, property: 'positionY' },
+                { name: 'Pos Z', min: -3, max: 1, value: carControls.positionZ, property: 'positionZ' },
+                { name: 'Rot Y', min: -Math.PI, max: Math.PI, value: carControls.rotationY, property: 'rotationY' }
             ];
 
             sliders.forEach((sliderConfig, index) => {
-                const yPos = -index * sliderSpacing;
-                
-                // Create slider background - larger for better AR interaction
-                const bgGeometry = new THREE.PlaneGeometry(sliderWidth, sliderHeight * 2.5);
-                const bgMaterial = new THREE.MeshBasicMaterial({ 
-                    color: 0x333333,
-                    transparent: true,
-                    opacity: 0.4
-                });
-                const background = new THREE.Mesh(bgGeometry, bgMaterial);
+                const yPos = -0.54 - index * sliderSpacing;
+
+                const background = new THREE.Mesh(
+                    new THREE.PlaneGeometry(sliderWidth, sliderHeight * 4),
+                    new THREE.MeshBasicMaterial({ color: 0x1a1e24, transparent: true, opacity: 0.5 }));
                 background.position.set(0, yPos, 0);
                 background.userData = { isSliderBackground: true };
                 slidersGroup.add(background);
 
-                // Create slider track
-                const trackGeometry = new THREE.PlaneGeometry(sliderWidth, sliderHeight);
-                const trackMaterial = new THREE.MeshBasicMaterial({ 
-                    color: 0x666666,
-                    transparent: true,
-                    opacity: 0.8
-                });
-                const track = new THREE.Mesh(trackGeometry, trackMaterial);
-                track.position.set(0, yPos, 0.001);
+                const track = new THREE.Mesh(
+                    new THREE.PlaneGeometry(sliderWidth, sliderHeight),
+                    new THREE.MeshBasicMaterial({ color: 0x3a4048, transparent: true, opacity: 0.9 }));
+                track.position.set(0, yPos, 0.002);
                 slidersGroup.add(track);
 
-                // Create slider handle - bigger for AR interaction
-                const handleGeometry = new THREE.BoxGeometry(0.12, sliderHeight * 1.8, 0.08);
-                const handleMaterial = new THREE.MeshStandardMaterial({
-                    color: STUDIO.accent,
-                    emissive: STUDIO.accent,
-                    emissiveIntensity: 1.4,
-                    transparent: true,
-                    opacity: 0.95
-                });
-                const handle = new THREE.Mesh(handleGeometry, handleMaterial);
-                
-                // Calculate initial handle position
+                const handle = new THREE.Mesh(
+                    new THREE.BoxGeometry(0.06, sliderHeight * 3, 0.05),
+                    new THREE.MeshStandardMaterial({ color: STUDIO.accent, emissive: STUDIO.accent, emissiveIntensity: 1.6 }));
                 const normalizedValue = (sliderConfig.value - sliderConfig.min) / (sliderConfig.max - sliderConfig.min);
-                const handleX = (normalizedValue - 0.5) * sliderWidth;
-                handle.position.set(handleX, yPos, 0.01);
-                
-                // Store slider data
+                handle.position.set((normalizedValue - 0.5) * sliderWidth, yPos, 0.02);
                 handle.userData = {
-                    isSlider: true,
-                    property: sliderConfig.property,
-                    min: sliderConfig.min,
-                    max: sliderConfig.max,
-                    background: background,
-                    sliderWidth: sliderWidth
+                    isSlider: true, property: sliderConfig.property, min: sliderConfig.min,
+                    max: sliderConfig.max, background: background, sliderWidth: sliderWidth
                 };
-                
                 slidersGroup.add(handle);
 
-                // Create label
-                const canvas = document.createElement('canvas');
-                canvas.width = 200;
-                canvas.height = 50;
-                const context = canvas.getContext('2d');
-                
-                createGlassBackground(context, 200, 50, 8, 'rgba(0, 0, 0, 0.6)');
-                
-                context.fillStyle = '#ffffff';
-                context.font = 'Bold 12px Arial';
-                context.textAlign = 'left';
-                context.fillText(`${sliderConfig.name}: ${sliderConfig.value.toFixed(2)}`, 5, 30);
-
-                const labelTexture = new THREE.CanvasTexture(canvas);
-                const labelMaterial = new THREE.MeshBasicMaterial({ 
-                    map: labelTexture,
-                    transparent: true,
-                    opacity: 0.8,
-                    alphaTest: 0.01,
-                    side: THREE.DoubleSide
-                });
-                const labelGeometry = new THREE.PlaneGeometry(0.8, 0.2);
-                const label = new THREE.Mesh(labelGeometry, labelMaterial);
-                label.position.set(-1.2, yPos, 0);
-                
-                // Store label reference in handle for updates
+                const labelCanvas = panelCanvas(0.62, 0.2);
+                const label = meshFromCanvas(labelCanvas, 0.62, 0.2, 0.97);
+                label.position.set(-0.62, yPos, 0);
                 handle.userData.label = label;
-                handle.userData.labelCanvas = canvas;
-                handle.userData.labelContext = context;
-                handle.userData.labelTexture = labelTexture;
+                handle.userData.labelCanvas = labelCanvas;
+                handle.userData.labelContext = labelCanvas.getContext('2d');
+                handle.userData.labelTexture = label.material.map;
                 handle.userData.sliderName = sliderConfig.name;
-                
+                updateSliderLabel(handle, sliderConfig.value);
                 slidersGroup.add(label);
             });
         }
 
         function updateSliderLabel(handle, value) {
-            const userData = handle.userData;
-            
-            // Clear canvas
-            userData.labelContext.clearRect(0, 0, 200, 50);
-            
-            // Recreate background
-            createGlassBackground(userData.labelContext, 200, 50, 8, 'rgba(0, 0, 0, 0.6)');
-            
-            userData.labelContext.fillStyle = '#ffffff';
-            userData.labelContext.font = 'Bold 12px Arial';
-            userData.labelContext.textAlign = 'left';
-            userData.labelContext.fillText(`${userData.sliderName}: ${value.toFixed(2)}`, 5, 30);
-            userData.labelTexture.needsUpdate = true;
+            const ctx = handle.userData.labelContext;
+            const W = ctx.canvas.width, H = ctx.canvas.height;
+            drawPanel(ctx, H * 0.22);
+            ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+            ctx.fillStyle = '#8b93a3';
+            ctx.font = `600 ${Math.round(H * 0.2)}px "IBM Plex Sans Condensed", Arial, sans-serif`;
+            ctx.fillText(handle.userData.sliderName.toUpperCase(), W * 0.11, H * 0.36);
+            ctx.fillStyle = '#eef1f6';
+            ctx.font = `600 ${Math.round(H * 0.3)}px "IBM Plex Sans Condensed", Arial, sans-serif`;
+            ctx.fillText(value.toFixed(2), W * 0.11, H * 0.72);
+            ctx.textBaseline = 'alphabetic';
+            handle.userData.labelTexture.needsUpdate = true;
         }
 
         function updateAllSliders() {
